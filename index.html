@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>3D Solar System — Interactive Orrery</title>
+  <meta name="description" content="An interactive, scientifically grounded 3D model of the Solar System built with three.js." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CradialGradient id='g' cx='40%25' cy='38%25' r='65%25'%3E%3Cstop offset='0' stop-color='%23fff6d6'/%3E%3Cstop offset='0.5' stop-color='%23ffb43c'/%3E%3Cstop offset='1' stop-color='%23ff6a00'/%3E%3C/radialGradient%3E%3Ccircle cx='16' cy='16' r='11' fill='url(%23g)'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three.module.js",
+      "three/addons/": "./lib/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 3D canvas -->
+  <canvas id="scene"></canvas>
+
+  <!-- Loading screen -->
+  <div id="loading">
+    <div class="loading-box">
+      <div class="loading-sun"></div>
+      <h1>SOLAR SYSTEM</h1>
+      <p id="loading-text">Loading textures…</p>
+      <div class="loading-track"><div id="loading-bar"></div></div>
+    </div>
+  </div>
+
+  <!-- Top bar -->
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-mark">☀</span>
+      <div>
+        <div class="brand-title">SOLAR SYSTEM</div>
+        <div class="brand-sub">Interactive 3D Orrery</div>
+      </div>
+    </div>
+    <div id="hud">
+      <span id="hud-live"></span>
+      <span id="hud-follow"></span>
+      <span id="hud-fps"></span>
+      <button id="btn-eclipse" class="ghost-btn" title="Eclipse views">🌒 Eclipses</button>
+      <button id="btn-view" class="ghost-btn" title="View options">⚙ View</button>
+      <button id="btn-help" class="ghost-btn" title="Help">? Help</button>
+      <button id="btn-reset-view" class="ghost-btn" title="Reset camera">⟲ Reset view</button>
+    </div>
+  </header>
+
+  <!-- Left: body navigator -->
+  <aside id="nav-panel">
+    <div class="panel-head">
+      <span>EXPLORE</span>
+      <button id="btn-nav-toggle" class="icon-btn" title="Collapse">≡</button>
+    </div>
+    <div id="body-list"></div>
+  </aside>
+
+  <!-- Eclipse chooser popover -->
+  <div id="eclipse-menu" class="hidden">
+    <button id="ecl-go-solar" class="ecl-choice">
+      <span class="ecl-ico">🌑</span>
+      <span><b>Solar Eclipse</b><small>The Moon hides the Sun</small></span>
+    </button>
+    <button id="ecl-go-lunar" class="ecl-choice">
+      <span class="ecl-ico">🔴</span>
+      <span><b>Lunar Eclipse</b><small>Earth's shadow on the Moon</small></span>
+    </button>
+  </div>
+
+  <!-- Top-right: view options (popover) -->
+  <aside id="toggles" class="hidden">
+    <div class="panel-head"><span>VIEW OPTIONS</span></div>
+    <label class="switch"><input type="checkbox" id="tg-orbits" /> <span>Orbit paths</span></label>
+    <label class="switch"><input type="checkbox" id="tg-labels" /> <span>Labels</span></label>
+    <label class="switch"><input type="checkbox" id="tg-moons" /> <span>Moons</span></label>
+    <label class="switch"><input type="checkbox" id="tg-dwarfs" /> <span>Dwarf planets</span></label>
+    <label class="switch"><input type="checkbox" id="tg-spacecraft" /> <span>Spacecraft (Voyagers)</span></label>
+    <label class="switch"><input type="checkbox" id="tg-belts" /> <span>Asteroid & Kuiper belts</span></label>
+    <label class="switch"><input type="checkbox" id="tg-bloom" /> <span>Sun glow (bloom)</span></label>
+    <div class="select-row">
+      <span>Distance scale</span>
+      <select id="dist-mode">
+        <option value="visual">Compressed (visible)</option>
+        <option value="realistic">Realistic (to scale)</option>
+        <option value="accurate">Accurate · live (true positions)</option>
+      </select>
+      <div class="hint" id="dist-hint"></div>
+    </div>
+    <div class="select-row">
+      <span>Texture quality</span>
+      <select id="tex-res">
+        <option value="2k">2K · standard</option>
+        <option value="8k">8K · high-res</option>
+      </select>
+    </div>
+    <div class="select-row">
+      <span>Language</span>
+      <select id="lang-sel">
+        <option value="en">English</option>
+        <option value="vi">Tiếng Việt</option>
+      </select>
+    </div>
+  </aside>
+
+  <!-- Right: info panel -->
+  <aside id="info-panel" class="hidden">
+    <div class="info-head">
+      <div class="info-titles">
+        <h2 id="info-name">—</h2>
+        <div id="info-type" class="info-type"></div>
+      </div>
+      <div class="info-actions">
+        <button id="btn-info-toggle" class="icon-btn" title="Collapse">▾</button>
+        <button id="btn-focus" class="accent-btn">⌖ Focus &amp; follow</button>
+      </div>
+    </div>
+    <p id="info-desc"></p>
+    <div id="info-table"></div>
+    <div id="info-facts-wrap">
+      <h3>Did you know?</h3>
+      <ul id="info-facts"></ul>
+    </div>
+  </aside>
+
+  <!-- Bottom: time controls -->
+  <footer id="time-bar">
+    <div class="time-left">
+      <button id="btn-play" class="round-btn">❚❚</button>
+      <button id="btn-reverse" class="round-btn small" title="Reverse time">◄◄</button>
+      <button id="btn-now" class="ghost-btn" title="Jump to current date">Now</button>
+    </div>
+    <div class="time-mid">
+      <input type="range" id="speed-slider" />
+      <div class="time-readouts">
+        <span id="speed-readout">—</span>
+        <span class="dot">•</span>
+        <span id="sim-date">—</span>
+      </div>
+      <div id="speed-presets"></div>
+    </div>
+    <div class="time-right">
+      <label class="date-pick">Go to date
+        <input type="date" id="date-input" />
+      </label>
+    </div>
+  </footer>
+
+  <!-- Help panel -->
+  <div id="help-panel" class="hidden">
+    <div class="help-card">
+      <button id="btn-help-close" class="icon-btn close">✕</button>
+      <h2>How to use</h2>
+      <ul>
+        <li><b>Rotate:</b> click-drag with the left mouse button (one finger on touch).</li>
+        <li><b>Zoom:</b> scroll wheel, or <b>pinch with two fingers</b> on touch.</li>
+        <li><b>Pan:</b> right-click drag (two-finger drag on touch).</li>
+        <li><b>Fly the viewpoint:</b> <b>W A S D</b> or the <b>arrow keys</b> move through space; <b>R / F</b> move up / down. Speed adapts to how far you are zoomed in.</li>
+        <li><b>Select a body:</b> click it, click its label, or pick it from the left list.</li>
+        <li><b>Focus &amp; follow:</b> double-click a body, choose it in the list, or press <b>Focus &amp; follow</b>.</li>
+        <li><b>Pause / resume:</b> press <b>Space</b>. <b>Esc</b> stops following.</li>
+        <li><b>Time:</b> use the slider, presets, or <b>Now</b>; reverse with ◄◄.</li>
+      </ul>
+      <h3>About the model</h3>
+      <p>
+        Planet positions are computed from real <b>NASA/JPL J2000 Keplerian
+        orbital elements</b>, so the alignment of the planets matches the chosen
+        date. Axial tilts and rotation periods are physically accurate.
+        The default <i>Compressed</i> view shrinks the distances so every planet
+        is visible together; <i>Realistic</i> and <i>Accurate · live</i> show the
+        Solar System fully <b>true to scale</b> — bodies and the gulfs between
+        them share one ruler, so the Sun becomes a dot and the planets vanish
+        into mostly-empty space (Earth orbits about 107 Sun-widths from the Sun).
+        Use Compressed for an easy overview and Realistic to grasp the real scale.
+      </p>
+      <p id="credits"></p>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
