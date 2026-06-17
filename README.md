@@ -5,7 +5,7 @@ An interactive, scientifically grounded 3D model of the Solar System, built with
 **NASA/JPL J2000 Keplerian orbital elements**, so the alignment of the planets
 matches whatever date you choose.
 
-![Solar System](textures/sun.jpg)
+![3D Solar System — Interactive Orrery](docs/preview.png)
 
 ## ▶ How to run
 
