@@ -7,6 +7,8 @@ matches whatever date you choose.
 
 ![3D Solar System — Interactive Orrery](docs/preview.png)
 
+**Live demo:** https://buithethuat03.github.io/solar-system/
+
 ## ▶ How to run
 
 The app loads ES modules and texture images, so it must be served over HTTP
