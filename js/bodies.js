@@ -656,6 +656,26 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   }
 
   // Single shared load of the NASA Voyager model, then clone it into each craft.
+  function cloneVoyagerMaterial(material) {
+    if (Array.isArray(material)) return material.map(cloneVoyagerMaterial);
+    if (!material) return material;
+
+    const mat = material.clone();
+    // GLTF textured materials usually keep material.color at white and put the
+    // real albedo in material.map. Using that white color as emissive flattens
+    // Voyager into a pale silhouette, so the visibility lift must be texture-led.
+    if (mat.emissive) {
+      if (mat.map) {
+        mat.emissive.setScalar(0.06);
+        mat.emissiveMap = mat.map;
+      } else if (mat.color) {
+        mat.emissive.copy(mat.color).multiplyScalar(0.08);
+      }
+      mat.needsUpdate = true;
+    }
+    return mat;
+  }
+
   gltfLoader.load('models/Voyager.glb', (gltf) => {
     const src = gltf.scene;
     src.updateMatrixWorld(true);
@@ -671,13 +691,9 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         if (!o.isMesh) return;
         o.frustumCulled = false;
         if (o.material) {
-          o.material = o.material.clone();   // isolate clones from each other
-          // Lift emissive a touch — at 150+ AU the craft is barely lit, and we
-          // want it readable from any angle rather than a black silhouette.
-          if (o.material.emissive) {
-            const base = o.material.color ? o.material.color.clone() : new THREE.Color(0x999999);
-            o.material.emissive = base.multiplyScalar(0.18);
-          }
+          // Isolate clones and keep the readability boost from washing out the
+          // GLB's own texture colors.
+          o.material = cloneVoyagerMaterial(o.material);
         }
         o.userData = { kind: 'spacecraft', ref: vo.data, object3D: vo.group };
         selectable.push(o);
