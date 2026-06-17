@@ -1,7 +1,3 @@
-# Local dev & deployment helpers (not part of the static site)
-server.py
-web.config
-
 # Archives & scratch notes
 *.zip
 verify_selectors.txt
