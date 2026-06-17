@@ -7,6 +7,7 @@
 // ============================================================================
 import * as THREE from 'three';
 import { resolveTexture, highResTexture } from './bodies.js';
+import { t as tr } from './i18n.js';
 
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 const DURATION = 22;            // seconds for one full pass of the timeline
@@ -17,55 +18,22 @@ const SOLAR_EM = 26;            // Earth–Moon gap (Moon toward the Sun)
 const LUNAR_EM = 28;            // Earth–Moon gap (Moon away from the Sun)
 const LUNAR_UMBRA_LEN = 86;     // length of Earth's umbra cone
 
-const DESCRIPTIONS = {
+const DESCRIPTION_KEYS = {
   solar: {
-    title: 'Solar Eclipse',
-    type: 'The Moon hides the Sun',
-    html: `
-      <p>A <b>solar eclipse</b> happens when the <b>Moon passes directly between
-      the Sun and the Earth</b>, casting its shadow onto Earth's surface and
-      blocking the Sun's light for observers underneath.</p>
-      <h3>The shadow has two parts</h3>
-      <ul>
-        <li><b>Umbra</b> — the dark inner cone. Observers here see a <b>total</b>
-        eclipse: the Sun is completely covered and its pearly <b>corona</b> appears.</li>
-        <li><b>Penumbra</b> — the lighter outer cone. Observers here see only a
-        <b>partial</b> eclipse.</li>
-      </ul>
-      <h3>Total vs. Annular</h3>
-      <p>When the Moon is near perigee (closest) it looks slightly larger than the
-      Sun → <b>total eclipse</b>. Near apogee it looks smaller, leaving a bright
-      <b>"ring of fire"</b> → <b>annular eclipse</b>. Try the toggle below.</p>
-      <h3>Why is it rare?</h3>
-      <p>The Moon's orbit is tilted about <b>5°</b> to Earth's orbit, so a perfect
-      line-up only occurs at the orbital <i>nodes</i> — roughly twice a year.</p>
-      <p class="ecl-warn">⚠ Never look directly at the Sun without certified eclipse
-      glasses — only the few minutes of <i>totality</i> are safe to view unaided.</p>`,
+    title: 'eclSolarDetailTitle',
+    type: 'eclSolarDetailType',
+    html: 'eclSolarDescHtml',
   },
   lunar: {
-    title: 'Lunar Eclipse',
-    type: 'The Earth hides the Sun from the Moon',
-    html: `
-      <p>A <b>lunar eclipse</b> happens when the <b>Earth passes between the Sun
-      and a full Moon</b>, so Earth's shadow falls across the Moon.</p>
-      <h3>Why does the Moon turn red? 🔴</h3>
-      <p>Even inside the umbra the Moon doesn't go black. Sunlight grazing the edge
-      of Earth is <b>refracted (bent) through our atmosphere</b>, which scatters
-      away blue light and bends the remaining <b>red light</b> onto the Moon — the
-      same effect that makes sunsets red. The result is the famous
-      <b>"Blood Moon"</b>.</p>
-      <h3>Phases</h3>
-      <ul>
-        <li><b>Penumbral</b> — the Moon dims subtly.</li>
-        <li><b>Partial</b> — a dark, curved bite (the umbra) crosses the Moon.</li>
-        <li><b>Totality</b> — the whole Moon glows coppery red.</li>
-      </ul>
-      <h3>Good to know</h3>
-      <p>A lunar eclipse is <b>completely safe</b> to watch with the naked eye, can
-      last <b>over an hour</b>, and is visible from the entire night side of Earth
-      at once.</p>`,
+    title: 'eclLunarDetailTitle',
+    type: 'eclLunarDetailType',
+    html: 'eclLunarDescHtml',
   },
 };
+
+function fmt(key, values) {
+  return tr(key).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? '');
+}
 
 function darkConeMaterial(opacity) {
   return new THREE.MeshBasicMaterial({
@@ -200,15 +168,15 @@ export function createEclipse(ctx) {
   ui.id = 'eclipse-ui';
   ui.innerHTML = `
     <div class="ecl-top">
-      <div class="ecl-title"><h2 id="ecl-title">Eclipse</h2><div id="ecl-type" class="ecl-type"></div></div>
-      <button id="ecl-exit" class="ghost-btn">✕ Exit eclipse view</button>
+      <div class="ecl-title"><h2 id="ecl-title">${tr('eclTitleFallback')}</h2><div id="ecl-type" class="ecl-type"></div></div>
+      <button id="ecl-exit" class="ghost-btn">${tr('eclExit')}</button>
     </div>
     <aside class="ecl-desc-panel">
-      <div class="panel-head"><span>ABOUT</span></div>
+      <div class="panel-head"><span>${tr('eclAbout')}</span></div>
       <div id="ecl-desc" class="ecl-desc"></div>
     </aside>
     <aside class="ecl-pov-panel">
-      <div class="panel-head"><span>VIEW FROM EARTH'S SURFACE</span></div>
+      <div class="panel-head"><span>${tr('eclViewFromEarth')}</span></div>
       <canvas id="ecl-canvas" class="ecl-canvas"></canvas>
       <div class="ecl-phase">
         <span id="ecl-phase-name">—</span>
@@ -219,11 +187,11 @@ export function createEclipse(ctx) {
       <button id="ecl-play" class="round-btn">❚❚</button>
       <div class="ecl-track">
         <input type="range" id="ecl-scrub" min="0" max="1000" value="0" />
-        <div class="ecl-time-readout"><span id="ecl-clock">Eclipse timeline</span></div>
+        <div class="ecl-time-readout"><span id="ecl-clock">${tr('eclTimeline')}</span></div>
       </div>
       <div id="ecl-seg" class="ecl-seg">
-        <button data-m="total" class="active">Total</button>
-        <button data-m="annular">Annular</button>
+        <button data-m="total" class="active">${tr('eclModeTotal')}</button>
+        <button data-m="annular">${tr('eclModeAnnular')}</button>
       </div>
     </footer>`;
   document.body.appendChild(ui);
@@ -271,9 +239,9 @@ export function createEclipse(ctx) {
     type = kind; active = true; t = 0; playing = true;
     document.body.classList.add('eclipse-mode');
     ui.dataset.type = kind;
-    $('ecl-title').textContent = DESCRIPTIONS[kind].title;
-    $('ecl-type').textContent = DESCRIPTIONS[kind].type;
-    $('ecl-desc').innerHTML = DESCRIPTIONS[kind].html;
+    $('ecl-title').textContent = tr(DESCRIPTION_KEYS[kind].title);
+    $('ecl-type').textContent = tr(DESCRIPTION_KEYS[kind].type);
+    $('ecl-desc').innerHTML = tr(DESCRIPTION_KEYS[kind].html);
     rig.visible = true;
     buildShadow(kind);
     buildOrbits(kind);
@@ -732,20 +700,20 @@ export function createEclipse(ctx) {
     if (type === 'solar') {
       const { R, rM, sep } = solarGeom();
       const covered = Math.min(1, Math.max(0, (R + rM - sep) / (2 * R)));
-      pct = Math.round(covered * 100) + '% covered';
-      if (!annular && sep <= rM - R) name = '🌑 Totality — corona visible';
-      else if (annular && sep <= R - rM) name = '💍 Annularity — “ring of fire”';
-      else if (sep >= R + rM) name = 'Before / after eclipse';
-      else name = (t < 0.5 ? 'Partial phase (beginning)' : 'Partial phase (ending)');
-      if (Math.abs(t - 0.5) < 0.012) name = annular ? '💍 Maximum (annular)' : '🌑 Maximum (totality)';
+      pct = fmt('eclPctCovered', { pct: Math.round(covered * 100) });
+      if (!annular && sep <= rM - R) name = tr('eclPhaseSolarTotal');
+      else if (annular && sep <= R - rM) name = tr('eclPhaseSolarAnnular');
+      else if (sep >= R + rM) name = tr('eclPhaseBeforeAfter');
+      else name = tr(t < 0.5 ? 'eclPhasePartialBeginning' : 'eclPhasePartialEnding');
+      if (Math.abs(t - 0.5) < 0.012) name = tr(annular ? 'eclPhaseSolarMaxAnnular' : 'eclPhaseSolarMaxTotal');
     } else {
       const { R, umbraR, penumbraR, d } = lunarGeom();
-      if (d <= umbraR - R) name = '🔴 Totality — Blood Moon';
-      else if (d <= umbraR + R) name = '🌗 Partial (umbral) phase';
-      else if (d <= penumbraR + R) name = '🌘 Penumbral phase';
-      else name = 'Before / after eclipse';
+      if (d <= umbraR - R) name = tr('eclPhaseLunarTotal');
+      else if (d <= umbraR + R) name = tr('eclPhaseLunarPartial');
+      else if (d <= penumbraR + R) name = tr('eclPhaseLunarPenumbral');
+      else name = tr('eclPhaseBeforeAfter');
       const into = Math.min(1, Math.max(0, (umbraR + R - d) / (2 * R)));
-      pct = Math.round(into * 100) + '% in umbra';
+      pct = fmt('eclPctInUmbra', { pct: Math.round(into * 100) });
     }
     phaseName.textContent = name;
     phasePct.textContent = pct;

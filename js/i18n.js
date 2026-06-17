@@ -19,6 +19,68 @@ const STRINGS = {
     explore: 'EXPLORE', collapse: 'Collapse', expand: 'Expand details',
     eclSolarTitle: 'Solar Eclipse', eclSolarSub: 'The Moon hides the Sun',
     eclLunarTitle: 'Lunar Eclipse', eclLunarSub: "Earth's shadow on the Moon",
+    eclTitleFallback: 'Eclipse',
+    eclExit: '✕ Exit eclipse view',
+    eclAbout: 'ABOUT',
+    eclViewFromEarth: "VIEW FROM EARTH'S SURFACE",
+    eclTimeline: 'Eclipse timeline',
+    eclModeTotal: 'Total',
+    eclModeAnnular: 'Annular',
+    eclSolarDetailTitle: 'Solar Eclipse',
+    eclSolarDetailType: 'The Moon hides the Sun',
+    eclSolarDescHtml: `
+      <p>A <b>solar eclipse</b> happens when the <b>Moon passes directly between
+      the Sun and the Earth</b>, casting its shadow onto Earth's surface and
+      blocking the Sun's light for observers underneath.</p>
+      <h3>The shadow has two parts</h3>
+      <ul>
+        <li><b>Umbra</b> — the dark inner cone. Observers here see a <b>total</b>
+        eclipse: the Sun is completely covered and its pearly <b>corona</b> appears.</li>
+        <li><b>Penumbra</b> — the lighter outer cone. Observers here see only a
+        <b>partial</b> eclipse.</li>
+      </ul>
+      <h3>Total vs. Annular</h3>
+      <p>When the Moon is near perigee (closest) it looks slightly larger than the
+      Sun → <b>total eclipse</b>. Near apogee it looks smaller, leaving a bright
+      <b>"ring of fire"</b> → <b>annular eclipse</b>. Try the toggle below.</p>
+      <h3>Why is it rare?</h3>
+      <p>The Moon's orbit is tilted about <b>5°</b> to Earth's orbit, so a perfect
+      line-up only occurs at the orbital <i>nodes</i> — roughly twice a year.</p>
+      <p class="ecl-warn">⚠ Never look directly at the Sun without certified eclipse
+      glasses — only the few minutes of <i>totality</i> are safe to view unaided.</p>`,
+    eclLunarDetailTitle: 'Lunar Eclipse',
+    eclLunarDetailType: 'The Earth hides the Sun from the Moon',
+    eclLunarDescHtml: `
+      <p>A <b>lunar eclipse</b> happens when the <b>Earth passes between the Sun
+      and a full Moon</b>, so Earth's shadow falls across the Moon.</p>
+      <h3>Why does the Moon turn red? 🔴</h3>
+      <p>Even inside the umbra the Moon doesn't go black. Sunlight grazing the edge
+      of Earth is <b>refracted (bent) through our atmosphere</b>, which scatters
+      away blue light and bends the remaining <b>red light</b> onto the Moon — the
+      same effect that makes sunsets red. The result is the famous
+      <b>"Blood Moon"</b>.</p>
+      <h3>Phases</h3>
+      <ul>
+        <li><b>Penumbral</b> — the Moon dims subtly.</li>
+        <li><b>Partial</b> — a dark, curved bite (the umbra) crosses the Moon.</li>
+        <li><b>Totality</b> — the whole Moon glows coppery red.</li>
+      </ul>
+      <h3>Good to know</h3>
+      <p>A lunar eclipse is <b>completely safe</b> to watch with the naked eye, can
+      last <b>over an hour</b>, and is visible from the entire night side of Earth
+      at once.</p>`,
+    eclPctCovered: '{pct}% covered',
+    eclPctInUmbra: '{pct}% in umbra',
+    eclPhaseSolarTotal: '🌑 Totality — corona visible',
+    eclPhaseSolarAnnular: '💍 Annularity — “ring of fire”',
+    eclPhaseBeforeAfter: 'Before / after eclipse',
+    eclPhasePartialBeginning: 'Partial phase (beginning)',
+    eclPhasePartialEnding: 'Partial phase (ending)',
+    eclPhaseSolarMaxAnnular: '💍 Maximum (annular)',
+    eclPhaseSolarMaxTotal: '🌑 Maximum (totality)',
+    eclPhaseLunarTotal: '🔴 Totality — Blood Moon',
+    eclPhaseLunarPartial: '🌗 Partial (umbral) phase',
+    eclPhaseLunarPenumbral: '🌘 Penumbral phase',
     viewOptions: 'VIEW OPTIONS',
     tgOrbits: 'Orbit paths', tgLabels: 'Labels', tgMoons: 'Moons', tgDwarfs: 'Dwarf planets',
     tgBelts: 'Asteroid & Kuiper belts', tgBloom: 'Sun glow (bloom)',
@@ -68,6 +130,72 @@ const STRINGS = {
     explore: 'KHÁM PHÁ', collapse: 'Thu gọn', expand: 'Mở rộng chi tiết',
     eclSolarTitle: 'Nhật thực', eclSolarSub: 'Mặt Trăng che khuất Mặt Trời',
     eclLunarTitle: 'Nguyệt thực', eclLunarSub: 'Bóng Trái Đất phủ lên Mặt Trăng',
+    eclTitleFallback: 'Nhật/Nguyệt thực',
+    eclExit: '✕ Thoát chế độ nhật/nguyệt thực',
+    eclAbout: 'GIỚI THIỆU',
+    eclViewFromEarth: 'GÓC NHÌN TỪ BỀ MẶT TRÁI ĐẤT',
+    eclTimeline: 'Dòng thời gian nhật/nguyệt thực',
+    eclModeTotal: 'Toàn phần',
+    eclModeAnnular: 'Hình khuyên',
+    eclSolarDetailTitle: 'Nhật thực',
+    eclSolarDetailType: 'Mặt Trăng che khuất Mặt Trời',
+    eclSolarDescHtml: `
+      <p><b>Nhật thực</b> xảy ra khi <b>Mặt Trăng đi thẳng giữa Mặt Trời
+      và Trái Đất</b>, đổ bóng lên bề mặt Trái Đất và che ánh sáng Mặt Trời
+      đối với người quan sát bên dưới.</p>
+      <h3>Bóng có hai phần</h3>
+      <ul>
+        <li><b>Umbra</b> (bóng tối) — nón bóng tối ở giữa. Người quan sát trong
+        vùng này thấy <b>nhật thực toàn phần</b>: Mặt Trời bị che hoàn toàn và
+        <b>vành nhật hoa</b> sáng ngọc hiện ra.</li>
+        <li><b>Penumbra</b> (bóng nửa tối) — nón bóng nhạt bên ngoài. Người quan
+        sát ở đây chỉ thấy <b>nhật thực một phần</b>.</li>
+      </ul>
+      <h3>Toàn phần và hình khuyên</h3>
+      <p>Khi Mặt Trăng gần cận địa (gần Trái Đất nhất), nó trông hơi lớn hơn
+      Mặt Trời → <b>nhật thực toàn phần</b>. Khi gần viễn địa, nó trông nhỏ hơn,
+      để lại một vòng sáng <b>"vòng lửa"</b> → <b>nhật thực hình khuyên</b>.
+      Hãy thử nút chuyển bên dưới.</p>
+      <h3>Vì sao hiện tượng này hiếm?</h3>
+      <p>Quỹ đạo Mặt Trăng nghiêng khoảng <b>5°</b> so với quỹ đạo Trái Đất,
+      nên sự thẳng hàng hoàn hảo chỉ xảy ra tại các <i>nút quỹ đạo</i> —
+      khoảng hai lần mỗi năm.</p>
+      <p class="ecl-warn">⚠ Không bao giờ nhìn trực tiếp vào Mặt Trời nếu không
+      có kính xem nhật thực đạt chuẩn — chỉ vài phút <i>toàn phần</i> mới an toàn
+      để nhìn bằng mắt thường.</p>`,
+    eclLunarDetailTitle: 'Nguyệt thực',
+    eclLunarDetailType: 'Trái Đất che ánh sáng Mặt Trời khỏi Mặt Trăng',
+    eclLunarDescHtml: `
+      <p><b>Nguyệt thực</b> xảy ra khi <b>Trái Đất nằm giữa Mặt Trời và
+      trăng tròn</b>, khiến bóng Trái Đất quét qua Mặt Trăng.</p>
+      <h3>Vì sao Mặt Trăng chuyển đỏ? 🔴</h3>
+      <p>Ngay cả trong vùng umbra, Mặt Trăng không tối đen. Ánh sáng Mặt Trời
+      lướt qua rìa Trái Đất bị <b>khúc xạ (bẻ cong) qua khí quyển</b>; khí quyển
+      tán xạ bớt ánh sáng xanh và bẻ phần <b>ánh sáng đỏ</b> còn lại lên
+      Mặt Trăng — cùng hiệu ứng làm hoàng hôn có màu đỏ. Kết quả là hiện tượng
+      <b>"Trăng máu"</b> nổi tiếng.</p>
+      <h3>Các pha</h3>
+      <ul>
+        <li><b>Nửa tối</b> — Mặt Trăng mờ đi rất nhẹ.</li>
+        <li><b>Một phần</b> — một mảng tối cong (umbra) quét qua Mặt Trăng.</li>
+        <li><b>Toàn phần</b> — toàn bộ Mặt Trăng ánh đỏ màu đồng.</li>
+      </ul>
+      <h3>Điều nên biết</h3>
+      <p>Nguyệt thực <b>hoàn toàn an toàn</b> khi quan sát bằng mắt thường, có thể
+      kéo dài <b>hơn một giờ</b>, và nhìn thấy đồng thời từ toàn bộ nửa Trái Đất
+      đang là ban đêm.</p>`,
+    eclPctCovered: '{pct}% bị che khuất',
+    eclPctInUmbra: '{pct}% trong bóng tối',
+    eclPhaseSolarTotal: '🌑 Toàn phần — thấy vành nhật hoa',
+    eclPhaseSolarAnnular: '💍 Hình khuyên — “vòng lửa”',
+    eclPhaseBeforeAfter: 'Trước / sau thực',
+    eclPhasePartialBeginning: 'Pha một phần (bắt đầu)',
+    eclPhasePartialEnding: 'Pha một phần (kết thúc)',
+    eclPhaseSolarMaxAnnular: '💍 Cực đại (hình khuyên)',
+    eclPhaseSolarMaxTotal: '🌑 Cực đại (toàn phần)',
+    eclPhaseLunarTotal: '🔴 Toàn phần — Trăng máu',
+    eclPhaseLunarPartial: '🌗 Pha một phần (vùng bóng tối)',
+    eclPhaseLunarPenumbral: '🌘 Pha nửa tối',
     viewOptions: 'TÙY CHỌN HIỂN THỊ',
     tgOrbits: 'Đường quỹ đạo', tgLabels: 'Nhãn tên', tgMoons: 'Vệ tinh', tgDwarfs: 'Hành tinh lùn',
     tgBelts: 'Vành đai tiểu hành tinh & Kuiper', tgBloom: 'Quầng sáng Mặt Trời',
