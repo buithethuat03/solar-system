@@ -309,13 +309,23 @@ function applyVisibility() {
   const showCraft = state.showSpacecraft && state.distanceMode !== 'visual';
   // baseVisible is the master on/off; system.update() ANDs it with "has the craft
   // launched yet" each frame, so a craft scrubbed to before its launch stays hidden.
-  for (const v of system.voyagers) { v.baseVisible = showCraft; v.group.visible = showCraft; }
+  for (const v of system.voyagers) {
+    v.baseVisible = showCraft;
+    v.group.visible = showCraft && v.launched;
+  }
 
   for (const l of system.labels) {
     let vis = state.showLabels;
     if (l.type === 'moon') vis = vis && state.showMoons;
     if (l.type === 'dwarf') vis = vis && state.showDwarfs;
-    if (l.type === 'spacecraft') vis = vis && showCraft;
+    if (l.type === 'spacecraft') {
+      if (l.voyager) {
+        l.voyager.labelBaseVisible = state.showLabels && showCraft;
+        vis = l.voyager.labelBaseVisible && l.voyager.launched;
+      } else {
+        vis = vis && showCraft;
+      }
+    }
     l.obj.visible = vis;
   }
 }

@@ -640,11 +640,19 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     const label = makeLabel(data.name, 'label-spacecraft',
       () => onSelect({ kind: 'spacecraft', ref: data, object3D: group }, group));
     group.add(label);
-    labels.push({ obj: label, type: 'spacecraft' });
 
     // baseVisible = the master on/off (set by the Spacecraft toggle + scale mode);
     // update() ANDs it with "does the craft exist at this date yet" each frame.
-    voyagers.push({ data, group, modelPivot, label, model: null, meshes: [], baseVisible: group.visible });
+    const voyager = {
+      data, group, modelPivot, label,
+      model: null, meshes: [],
+      baseVisible: group.visible,
+      labelBaseVisible: group.visible,
+      launched: false,
+      trail: null,
+    };
+    labels.push({ obj: label, type: 'spacecraft', voyager });
+    voyagers.push(voyager);
   }
 
   // Single shared load of the NASA Voyager model, then clone it into each craft.
@@ -758,7 +766,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   // visRef (optional): an Object3D whose .visible mirrors whether the body is
   // shown; the trail is hidden whenever its body is hidden (e.g. dwarf planets
   // toggled off), and reappears when shown again.
-  function makeTrail(posRef, hex, span, points, posAt, visRef = null) {
+  function makeTrail(posRef, hex, span, points, posAt, visRef = null, visibleWhen = null) {
     const buf = points + 8;
     const geom = new THREE.BufferGeometry();
     const posArr = new Float32Array(buf * 3);
@@ -771,7 +779,9 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     }));
     line.frustumCulled = false; line.visible = false; line.renderOrder = 2;
     scene.add(line);
-    trails.push({ posAt, base: hexRGB(hex), geom, posArr, colArr, line, span, points, interval: span / points, visRef });
+    const trail = { posAt, base: hexRGB(hex), geom, posArr, colArr, line, span, points, interval: span / points, visRef, visibleWhen };
+    trails.push(trail);
+    return trail;
   }
   // The Sun only drifts (a straight line) — a handful of points is plenty.
   makeTrail(sunMesh.position, 0xffcc66, SUN_TRAIL_DAYS, 64,
@@ -791,21 +801,25 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   // Voyager wakes — they coast in nearly straight lines, so a short, sparse trail
   // is plenty. Shown only in the live "accurate" view (driftMode), like the planets'.
   for (const vo of voyagers) {
-    makeTrail(vo.group.position, vo.data.color, MAX_TRAIL_DAYS, 96, (t, out) => {
+    vo.trail = makeTrail(vo.group.position, vo.data.color, MAX_TRAIL_DAYS, 96, (t, out) => {
       const sp = voyagerScenePosition(vo.data, t);
       // Before launch the craft has no position — collapse this wake point onto
       // the head so the segment is zero-length (the wake never predates launch).
       if (!sp) { out.copy(vo.group.position); return; }
       const dr = DRIFT_RATE * (t - driftEpoch);
       out.set(DRIFT_DIR.x * dr + sp.x, DRIFT_DIR.y * dr + sp.y, DRIFT_DIR.z * dr + sp.z);
-    }, vo.group);
+    }, vo.group, () => vo.launched && vo.group.visible);
   }
 
   function clearTrails() { for (const tr of trails) tr.geom.setDrawRange(0, 0); }
   function setDriftMode(on, simDays) {
     driftMode = on; driftEpoch = simDays; lastSimDays = simDays;
     clearTrails();
-    for (const tr of trails) tr.line.visible = on;
+    for (const tr of trails) {
+      const bodyVisible = tr.visibleWhen ? tr.visibleWhen() : (tr.visRef ? tr.visRef.visible : true);
+      tr.line.visible = on && bodyVisible;
+      if (!tr.line.visible) tr.geom.setDrawRange(0, 0);
+    }
     if (!on) {
       drift.set(0, 0, 0);
       sunMesh.position.set(0, 0, 0); sunLight.position.set(0, 0, 0);
@@ -816,7 +830,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   function updateTrails(simDays, dir) {
     for (const tr of trails) {
       // Hide a body's wake the moment the body itself is hidden (e.g. dwarfs off).
-      tr.line.visible = tr.visRef ? tr.visRef.visible : true;
+      tr.line.visible = tr.visibleWhen ? tr.visibleWhen() : (tr.visRef ? tr.visRef.visible : true);
       if (!tr.line.visible) { tr.geom.setDrawRange(0, 0); continue; }
       const n = tr.points;
       const pos = tr.posArr, col = tr.colArr, b = tr.base, step = dir * tr.interval;
@@ -901,11 +915,18 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     // visibility follows the master toggle (baseVisible).
     for (const vo of voyagers) {
       const sp = voyagerScenePosition(vo.data, simDays);
+      vo.launched = !!sp;
       if (sp) {
         vo.group.position.set(drift.x + sp.x, drift.y + sp.y, drift.z + sp.z);
         vo.group.visible = vo.baseVisible;
       } else {
         vo.group.visible = false;
+      }
+      // CSS2D labels are DOM nodes; their own visibility must mirror the craft.
+      vo.label.visible = vo.labelBaseVisible && vo.group.visible;
+      if (!vo.launched && vo.trail) {
+        vo.trail.line.visible = false;
+        vo.trail.geom.setDrawRange(0, 0);
       }
     }
 
