@@ -216,6 +216,16 @@ aside, footer, header {
   border-radius: 8px; padding: 5px 7px; font-family: inherit; color-scheme: dark;
 }
 
+/* ---- Fullscreen --------------------------------------------------------- */
+/* Fullscreen is intentionally presentation-only: the View settings and panel
+   state stay untouched and are revealed exactly as they were on exit. */
+body.fullscreen-mode #topbar,
+body.fullscreen-mode #nav-panel,
+body.fullscreen-mode #info-panel,
+body.fullscreen-mode #time-bar,
+body.fullscreen-mode #toggles,
+body.fullscreen-mode #eclipse-menu { display: none !important; }
+
 /* ---- Help panel --------------------------------------------------------- */
 #help-panel {
   position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;

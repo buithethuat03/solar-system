@@ -83,7 +83,7 @@ const STRINGS = {
     eclPhaseLunarPenumbral: '🌘 Penumbral phase',
     viewOptions: 'VIEW OPTIONS',
     tgOrbits: 'Orbit paths', tgLabels: 'Labels', tgMoons: 'Moons', tgDwarfs: 'Dwarf planets',
-    tgBelts: 'Asteroid & Kuiper belts', tgBloom: 'Sun glow (bloom)',
+    tgBelts: 'Asteroid & Kuiper belts', tgBloom: 'Sun glow (bloom)', tgFullscreen: 'Fullscreen',
     tgSpacecraft: 'Spacecraft (Voyagers)',
     distScale: 'Distance scale', distVisual: 'Compressed (visible)',
     distRealistic: 'Realistic (to scale)', distAccurate: 'Accurate · live (true positions)',
@@ -198,7 +198,7 @@ const STRINGS = {
     eclPhaseLunarPenumbral: '🌘 Pha nửa tối',
     viewOptions: 'TÙY CHỌN HIỂN THỊ',
     tgOrbits: 'Đường quỹ đạo', tgLabels: 'Nhãn tên', tgMoons: 'Vệ tinh', tgDwarfs: 'Hành tinh lùn',
-    tgBelts: 'Vành đai tiểu hành tinh & Kuiper', tgBloom: 'Quầng sáng Mặt Trời',
+    tgBelts: 'Vành đai tiểu hành tinh & Kuiper', tgBloom: 'Quầng sáng Mặt Trời', tgFullscreen: 'Toàn màn hình',
     tgSpacecraft: 'Tàu vũ trụ (Voyager)',
     distScale: 'Tỉ lệ khoảng cách', distVisual: 'Nén lại (dễ nhìn)',
     distRealistic: 'Thực tế (đúng tỉ lệ)', distAccurate: 'Chính xác · trực tiếp (vị trí thật)',
@@ -330,7 +330,7 @@ export function applyStaticTranslations() {
   const lbl = (id, key) => { const s = labelOf(id); if (s) s.textContent = ' ' + t(key); };
   lbl('tg-orbits', 'tgOrbits'); lbl('tg-labels', 'tgLabels'); lbl('tg-moons', 'tgMoons');
   lbl('tg-dwarfs', 'tgDwarfs'); lbl('tg-spacecraft', 'tgSpacecraft');
-  lbl('tg-belts', 'tgBelts'); lbl('tg-bloom', 'tgBloom');
+  lbl('tg-belts', 'tgBelts'); lbl('tg-bloom', 'tgBloom'); lbl('tg-fullscreen', 'tgFullscreen');
 
   // select-row label spans (the <span> that is the first child of each .select-row)
   const rows = document.querySelectorAll('#toggles .select-row > span:first-child');

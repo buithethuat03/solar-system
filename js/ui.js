@@ -2,6 +2,7 @@
 //  ui.js  —  Builds the body navigator and binds all on-screen controls.
 // ============================================================================
 import { t, MONTHS, DAYS } from './i18n.js';
+import { bindFullscreenToggle } from './fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -187,16 +188,21 @@ export function initUI(controller) {
 
   // ---- View options popover ---------------------------------------------
   const viewBtn = $('btn-view'), togglesPanel = $('toggles');
+  const closeViewPopover = () => {
+    togglesPanel.classList.add('hidden');
+    viewBtn.classList.remove('active');
+  };
   if (viewBtn) viewBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     togglesPanel.classList.toggle('hidden');
     viewBtn.classList.toggle('active', !togglesPanel.classList.contains('hidden'));
   });
+  bindFullscreenToggle($('tg-fullscreen'), { beforeEnter: closeViewPopover });
   // Capture phase so a 3D label's stopPropagation can't keep the popover open.
   document.addEventListener('pointerdown', (e) => {
     if (!togglesPanel.classList.contains('hidden') &&
         !togglesPanel.contains(e.target) && e.target !== viewBtn) {
-      togglesPanel.classList.add('hidden'); viewBtn.classList.remove('active');
+      closeViewPopover();
     }
   }, true);
 
