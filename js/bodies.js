@@ -363,11 +363,23 @@ function moonCirclePts(dist) {
   return pts;
 }
 
+// onClick receives `focus`: true on a double click/tap (→ fly the camera to the
+// body, mirroring dblclick on the body itself — the only way to focus while the
+// UI is hidden in fullscreen), false on a single click (→ select only).
+// Double-taps are detected manually: PointerEvent.detail is 0 in some browsers
+// and 'dblclick' never fires on touch.
 function makeLabel(text, cls, onClick) {
   const div = document.createElement('div');
   div.className = 'body-label ' + cls;
   div.textContent = text;
-  div.addEventListener('pointerdown', (e) => { e.stopPropagation(); onClick(); });
+  let lastDown = -Infinity;
+  div.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    const now = performance.now();
+    const dbl = now - lastDown < 350;
+    lastDown = dbl ? -Infinity : now;   // a triple click must not focus twice
+    onClick(dbl);
+  });
   const obj = new CSS2DObject(div);
   obj.center.set(0.5, 1.2);
   obj.element = div;
@@ -462,7 +474,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   const ambient = new THREE.AmbientLight(0xffffff, 0.035);
   scene.add(ambient);
 
-  const sunLabel = makeLabel(SUN.name, 'label-sun', () => onSelect({ kind: 'sun', ref: SUN }, sunMesh));
+  const sunLabel = makeLabel(SUN.name, 'label-sun', (focus) => onSelect({ kind: 'sun', ref: SUN }, sunMesh, focus));
   sunLabel.position.set(0, sunRadius * 1.15, 0);
   sunMesh.add(sunLabel);
   labels.push({ obj: sunLabel, type: 'sun' });
@@ -553,7 +565,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
 
     // Label
     const label = makeLabel(data.name, data.isDwarf ? 'label-dwarf' : 'label-planet',
-      () => onSelect({ kind: 'planet', ref: data }, mesh));
+      (focus) => onSelect({ kind: 'planet', ref: data }, mesh, focus));
     label.position.set(0, radius * 1.4 + 0.6, 0);
     pivot.add(label);
     labels.push({ obj: label, type: data.isDwarf ? 'dwarf' : 'planet', planetId: data.id });
@@ -584,7 +596,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
       const circ = new THREE.Line(circGeo, new THREE.LineBasicMaterial({ color: 0x666677, transparent: true, opacity: 0.25 }));
       mPivot.add(circ);
 
-      const mLabel = makeLabel(md.name, 'label-moon', () => onSelect({ kind: 'moon', ref: md }, mMesh));
+      const mLabel = makeLabel(md.name, 'label-moon', (focus) => onSelect({ kind: 'moon', ref: md }, mMesh, focus));
       mLabel.position.set(0, mr * 1.6 + 0.3, 0);
       mMesh.add(mLabel);
       labels.push({ obj: mLabel, type: 'moon', planetId: data.id });
@@ -638,7 +650,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     group.add(modelPivot);
 
     const label = makeLabel(data.name, 'label-spacecraft',
-      () => onSelect({ kind: 'spacecraft', ref: data, object3D: group }, group));
+      (focus) => onSelect({ kind: 'spacecraft', ref: data, object3D: group }, group, focus));
     group.add(label);
 
     // baseVisible = the master on/off (set by the Spacecraft toggle + scale mode);
