@@ -187,25 +187,19 @@ export function createEclipse(ctx) {
   sun.position.set(SUN_X, 0, 0);
   rig.add(sun);
 
-  // Soft fresnel glow shell hugging the disc — the wide outer glow now comes
-  // from the bloom pass instead of one big flat sprite.
-  const sunShell = makeAtmosphere(SUN_R * 1.28, 0xffb15a, 2.2, 1.2);
-  sun.add(sunShell);
-
+  // One soft radial halo sprite (the Sun has no atmosphere — a fresnel shell
+  // here reads as a false planetary rim), plus the bloom pass for the glow.
   const glowTex = makeGlowTexture();
   const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTex, color: 0xffffff, transparent: true, opacity: 0.55,
+    map: glowTex, color: 0xffffff, transparent: true, opacity: 0.9,
     blending: THREE.AdditiveBlending, depthWrite: false,
   }));
-  sunGlow.scale.setScalar(SUN_R * 2.6);
+  sunGlow.scale.setScalar(SUN_R * 3.6);
   sun.add(sunGlow);
   // Tag the eclipse Sun onto the bloom layer (BLOOM_LAYER = 1 in main.js) so the
   // selective-bloom pass still makes it glow, while the sky backdrop never does.
-  // The shell must be tagged too: otherwise the bloom pass black-swaps it into
-  // an opaque sphere that would occlude the Sun's own bloom.
   sun.layers.enable(1);
   sunGlow.layers.enable(1);
-  sunShell.layers.enable(1);
 
   const light = new THREE.PointLight(0xfff4e2, 2.6, 0, 0);
   light.position.set(SUN_X, 0, 0);
@@ -1207,14 +1201,13 @@ export function createEclipse(ctx) {
   return { enter, exit, update, togglePlay, isActive: () => active };
 }
 
-// Soft radial glow used by the rig Sun sprite (tighter than before — the wide
-// halo now comes from the bloom pass and the fresnel shell).
+// Soft radial glow used by the rig Sun sprite.
 function makeGlowTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
   const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, 'rgba(255,240,205,0.9)');
-  grad.addColorStop(0.35, 'rgba(255,205,120,0.35)');
+  grad.addColorStop(0, 'rgba(255,245,210,1)');
+  grad.addColorStop(0.3, 'rgba(255,210,120,0.5)');
   grad.addColorStop(1, 'rgba(255,150,40,0)');
   g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
