@@ -275,7 +275,8 @@ function makeRing(innerR, outerR, opts, loader) {
 }
 
 // Soft atmospheric rim (additive fresnel shell), used for Earth / Venus.
-function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0) {
+// Exported: the eclipse rig reuses it for Earth's limb and the Sun's glow shell.
+export function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0) {
   const mat = new THREE.ShaderMaterial({
     uniforms: { uColor: { value: new THREE.Color(color) }, uPower: { value: power }, uIntensity: { value: intensity } },
     vertexShader: `
@@ -308,7 +309,8 @@ function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0) {
 // When a real water mask (Solar System Scope specular map) is supplied the
 // ocean glint is masked precisely to water; otherwise it falls back to a cheap
 // estimate from the day map's blue channel.
-function makeEarthMaterial(dayTex, nightTex, specTex) {
+// Exported: the eclipse rig uses the same day/night Earth as the main scene.
+export function makeEarthMaterial(dayTex, nightTex, specTex) {
   const uniforms = {
     dayMap: { value: dayTex },
     nightMap: { value: nightTex },
