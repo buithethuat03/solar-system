@@ -783,6 +783,19 @@ export function createEclipse(ctx) {
     }
     g.restore();
   }
+  // Overexposure white-out drawn OVER the disc: the uncovered Sun is blinding —
+  // no surface detail — and the "exposure" only stops down as coverage grows.
+  function drawSunBlowout(ox, oy, R, BO) {
+    if (BO <= 0.02) return;
+    g.save(); g.globalCompositeOperation = 'lighter';
+    const rad = R * (1.45 + 0.7 * BO);
+    const gr = g.createRadialGradient(ox, oy, R * 0.3, ox, oy, rad);
+    gr.addColorStop(0, `rgba(255,255,255,${0.95 * BO})`);
+    gr.addColorStop(0.55, `rgba(255,253,245,${0.55 * BO})`);
+    gr.addColorStop(1, 'rgba(255,250,235,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(ox, oy, rad, 0, 7); g.fill();
+    g.restore();
+  }
   // A brilliant white-hot disk with a defined edge, so the crescent reads during
   // the partial phase.
   function drawSunDisk(cx, cy, R) {
@@ -933,6 +946,8 @@ export function createEclipse(ctx) {
       g.beginPath(); g.arc(mx, my, rM * 1.01, ra - 1.05, ra + 1.05); g.stroke();
       g.restore();
     }
+    // Blinding until the Moon has eaten well into the disc (~45% coverage).
+    drawSunBlowout(ox, oy, R, clamp(1 - c * 2.2, 0, 1));
     drawCrescentBloom(cx, cy, R, mx, my, B, c);   // bright crescent bleeds over the Moon's edge
 
     // Last/first moments: inner corona emerges, then Baily's beads → diamond ring.
