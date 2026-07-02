@@ -727,15 +727,17 @@ export function createEclipse(ctx) {
     gg.addColorStop(0.85, `rgba(255,104,44,${0.30 * I})`);
     gg.addColorStop(1, `rgba(255,140,68,${0.52 * I})`);
     g.fillStyle = gg; g.fillRect(0, y0, cw, hy - y0);
-    // Deep totality: the shadow edge glows warm on EVERY horizon, not just below.
+    // Deep totality: the shadow edge glows warm on EVERY horizon, not just
+    // below. Soft radial pools at the horizon corners — never a hard band.
     const S = clamp((I - 0.55) / 0.45, 0, 1);
     if (S > 0.02) {
-      let lg = g.createLinearGradient(0, 0, cw * 0.30, 0);
-      lg.addColorStop(0, `rgba(255,120,50,${0.30 * S})`); lg.addColorStop(1, 'rgba(255,120,50,0)');
-      g.fillStyle = lg; g.fillRect(0, ch * 0.55, cw * 0.30, ch * 0.45);
-      lg = g.createLinearGradient(cw, 0, cw * 0.70, 0);
-      lg.addColorStop(0, `rgba(255,120,50,${0.30 * S})`); lg.addColorStop(1, 'rgba(255,120,50,0)');
-      g.fillStyle = lg; g.fillRect(cw * 0.70, ch * 0.55, cw * 0.30, ch * 0.45);
+      for (const gx of [0, cw]) {
+        const rg = g.createRadialGradient(gx, hy, 0, gx, hy, ch * 0.55);
+        rg.addColorStop(0, `rgba(255,120,50,${0.26 * S})`);
+        rg.addColorStop(0.5, `rgba(255,110,45,${0.09 * S})`);
+        rg.addColorStop(1, 'rgba(255,110,45,0)');
+        g.fillStyle = rg; g.beginPath(); g.arc(gx, hy, ch * 0.55, 0, 7); g.fill();
+      }
     }
   }
   function planetDot(x, y, r, I, col) {
@@ -948,7 +950,6 @@ export function createEclipse(ctx) {
     const u1 = umbraR - R, u2 = umbraR + R;
     const partialFrac = clamp((u2 - d) / (u2 - u1), 0, 1);   // 0 outside umbra → 1 fully inside
     const bright = 1 - partialFrac;                          // remaining direct moonlight
-    const edgeOnMoon = d > u1 && d < u2;                     // umbra edge crosses the disc
     const dl = Math.hypot(cx - sx, cy - sy) || 1;
     const dirx = (cx - sx) / dl, diry = (cy - sy) / dl;      // shadow centre → moon centre
 
@@ -974,7 +975,7 @@ export function createEclipse(ctx) {
     // Halos behind the disc: cool moonlight halo + a faint copper one at totality.
     const haloR = R * (1.7 + 1.6 * bright);
     const halo = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, haloR);
-    halo.addColorStop(0, `rgba(214,224,255,${(0.05 + 0.30 * bright).toFixed(3)})`);
+    halo.addColorStop(0, `rgba(214,224,255,${(0.04 + 0.16 * bright).toFixed(3)})`);
     halo.addColorStop(1, 'rgba(214,224,255,0)');
     g.fillStyle = halo; g.beginPath(); g.arc(cx, cy, haloR, 0, 7); g.fill();
     if (partialFrac > 0.02) {
@@ -992,23 +993,24 @@ export function createEclipse(ctx) {
     else diskTexture(moonImg, moonReady, cx, cy, R, '#e8e8ea', '#9a99a0');
     g.globalCompositeOperation = 'multiply';
     const A = g.createRadialGradient(sx, sy, 0, sx, sy, penumbraR);
+    // The umbra edge is a WIDE fuzzy smear (real shadow edges are never crisp):
+    // brick → copper → neutral spread over roughly 1.5 moon radii.
     A.addColorStop(0, 'rgb(84,34,26)');          // deepest umbra: dark brick
-    A.addColorStop(0.28, 'rgb(120,48,30)');
-    A.addColorStop(0.40, 'rgb(170,72,38)');
-    A.addColorStop(0.50, 'rgb(220,120,60)');     // bright copper toward the edge
-    A.addColorStop(0.531, 'rgb(190,198,202)');   // faint cool ozone band at the umbra rim
-    A.addColorStop(0.56, 'rgb(205,210,220)');
-    A.addColorStop(0.72, 'rgb(240,240,246)');
+    A.addColorStop(0.30, 'rgb(122,50,30)');
+    A.addColorStop(0.42, 'rgb(168,84,48)');
+    A.addColorStop(0.52, 'rgb(205,140,100)');
+    A.addColorStop(0.62, 'rgb(228,205,190)');
+    A.addColorStop(0.75, 'rgb(244,242,242)');
     A.addColorStop(1, 'rgb(255,255,255)');
     g.fillStyle = A; g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
     if (bright > 0.01) {
       g.globalCompositeOperation = 'screen';
       const B = g.createRadialGradient(sx, sy, 0, sx, sy, penumbraR);
       B.addColorStop(0, 'rgba(255,255,255,0)');
-      B.addColorStop(0.50, 'rgba(255,255,255,0)');
-      B.addColorStop(0.57, `rgba(255,252,248,${(0.18 * bright).toFixed(3)})`);
-      B.addColorStop(0.75, `rgba(255,255,255,${(0.55 * bright).toFixed(3)})`);
-      B.addColorStop(1, `rgba(255,255,255,${(0.90 * bright).toFixed(3)})`);
+      B.addColorStop(0.52, 'rgba(255,255,255,0)');
+      B.addColorStop(0.66, `rgba(255,252,248,${(0.10 * bright).toFixed(3)})`);
+      B.addColorStop(0.82, `rgba(255,255,255,${(0.26 * bright).toFixed(3)})`);
+      B.addColorStop(1, `rgba(255,255,255,${(0.42 * bright).toFixed(3)})`);
       g.fillStyle = B; g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
     }
     if (partialFrac > 0.02) {
@@ -1018,15 +1020,6 @@ export function createEclipse(ctx) {
       C.addColorStop(1, 'rgba(120,34,14,0)');
       g.fillStyle = C; g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
     }
-    // Ozone (turquoise) and copper fringes where the umbra edge crosses the disc.
-    if (edgeOnMoon) {
-      const rim = Math.sin(partialFrac * Math.PI);
-      g.globalCompositeOperation = 'screen';
-      g.strokeStyle = `rgba(96,196,182,${(0.16 * rim).toFixed(3)})`; g.lineWidth = Math.max(1.2, R * 0.03);
-      g.beginPath(); g.arc(sx, sy, umbraR * 1.005, 0, 7); g.stroke();
-      g.strokeStyle = `rgba(255,150,70,${(0.18 * rim).toFixed(3)})`;
-      g.beginPath(); g.arc(sx, sy, umbraR * 0.965, 0, 7); g.stroke();
-    }
     g.restore();
 
     // Overexposure bloom at the still-lit limb, bleeding past the disc edge.
@@ -1034,8 +1027,8 @@ export function createEclipse(ctx) {
       const bx = cx + dirx * R, by = cy + diry * R;
       g.save(); g.globalCompositeOperation = 'lighter';
       const fb = g.createRadialGradient(bx, by, 0, bx, by, R * 1.3);
-      fb.addColorStop(0, `rgba(255,253,250,${(0.55 * bright).toFixed(3)})`);
-      fb.addColorStop(0.4, `rgba(255,250,240,${(0.18 * bright).toFixed(3)})`);
+      fb.addColorStop(0, `rgba(255,253,250,${(0.30 * bright).toFixed(3)})`);
+      fb.addColorStop(0.4, `rgba(255,250,240,${(0.10 * bright).toFixed(3)})`);
       fb.addColorStop(1, 'rgba(255,250,240,0)');
       g.fillStyle = fb; g.beginPath(); g.arc(bx, by, R * 1.3, 0, 7); g.fill();
       g.restore();
