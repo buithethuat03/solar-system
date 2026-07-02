@@ -369,6 +369,7 @@ export function createEclipse(ctx) {
 
   // Offscreen canvases, rebuilt at enter/resize — never touched per frame.
   let coronaCv = null, moonDarkCv = null, moonBaseCv = null, starFieldCv = null;
+  let sunburstCv = null, cloudsCv = null;
 
   // Resize the drawing surface (cheap — safe to run per resize event).
   function applyCanvasSize() {
@@ -383,7 +384,11 @@ export function createEclipse(ctx) {
   }
   // Rebuild the offscreen sprites (heavy: ~1600 corona strokes + starfield).
   function rebuildPOVAssets() {
-    if (type === 'solar') buildCorona(Math.min(cw, ch) * 0.155 * 1.06);   // rM of the totality Moon
+    if (type === 'solar') {
+      buildCorona(Math.min(cw, ch) * 0.155 * 1.06);   // rM of the totality Moon
+      buildSunburst(Math.min(cw, ch) * 0.155);        // R of the Sun's disc
+      buildClouds();
+    }
     buildMoonDark();
     buildMoonBase();
     buildStarField();
@@ -463,6 +468,81 @@ export function createEclipse(ctx) {
       c.fillStyle = lg;
       c.beginPath(); c.moveTo(rM * 0.95, -rM * 0.42); c.lineTo(len, 0); c.lineTo(rM * 0.95, rM * 0.42); c.closePath(); c.fill();
       c.restore();
+    }
+  }
+
+  // Photographic starburst: 8 long + 8 short tapered rays (slightly tilted,
+  // fbm-varied lengths), each a faint warm underlay + a white core — the
+  // "squint at the sun" look. Baked once; per frame it is one drawImage.
+  function buildSunburst(R) {
+    if (!(R > 4)) return;
+    const size = Math.ceil(R * 14 * DPR);
+    sunburstCv = document.createElement('canvas');
+    sunburstCv.width = sunburstCv.height = size;
+    const c = sunburstCv.getContext('2d');
+    c.setTransform(DPR, 0, 0, DPR, size / 2, size / 2);
+    c.globalCompositeOperation = 'lighter';
+    const tilt = -0.35;
+    for (let i = 0; i < 16; i++) {
+      const a = tilt + (i / 16) * Math.PI * 2;
+      const major = i % 2 === 0;
+      const nz = fbmA(i * 0.137 + 0.41);
+      const len = R * (major ? 5.2 + 3.6 * nz : 2.0 + 1.6 * nz);
+      const w = R * (major ? 0.05 : 0.03);
+      const al = major ? 0.34 : 0.18;
+      c.save(); c.rotate(a);
+      let lg = c.createLinearGradient(0, 0, len, 0);
+      lg.addColorStop(0, `rgba(255,236,200,${al * 0.5})`);
+      lg.addColorStop(1, 'rgba(255,225,180,0)');
+      c.fillStyle = lg;
+      c.beginPath(); c.moveTo(0, -w * 2.2); c.lineTo(len * 0.92, 0); c.lineTo(0, w * 2.2); c.closePath(); c.fill();
+      lg = c.createLinearGradient(0, 0, len, 0);
+      lg.addColorStop(0, `rgba(255,253,247,${al})`);
+      lg.addColorStop(0.3, `rgba(255,250,238,${al * 0.5})`);
+      lg.addColorStop(1, 'rgba(255,248,230,0)');
+      c.fillStyle = lg;
+      c.beginPath(); c.moveTo(0, -w); c.lineTo(len, 0); c.lineTo(0, w); c.closePath(); c.fill();
+      c.restore();
+    }
+  }
+
+  // Soft cumulus layer for the daytime sky, baked as a seamless horizontal
+  // tile (every puff is also drawn at x±cw) so it can drift slowly per frame.
+  function buildClouds() {
+    cloudsCv = document.createElement('canvas');
+    cloudsCv.width = Math.max(1, Math.round(cw * DPR));
+    const skyH = ch * 0.8;
+    cloudsCv.height = Math.max(1, Math.round(skyH * DPR));
+    const c = cloudsCv.getContext('2d');
+    c.setTransform(DPR, 0, 0, DPR, 0, 0);
+    let s = 7;
+    const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    const puff = (x, y, r, al, col = '255,255,255') => {
+      for (const wx of [x - cw, x, x + cw]) {       // wrapped copies → seamless tile
+        const gd = c.createRadialGradient(wx, y, 0, wx, y, r);
+        gd.addColorStop(0, `rgba(${col},${al})`);
+        gd.addColorStop(0.6, `rgba(${col},${al * 0.45})`);
+        gd.addColorStop(1, `rgba(${col},0)`);
+        c.fillStyle = gd; c.beginPath(); c.arc(wx, y, r, 0, 7); c.fill();
+      }
+    };
+    for (let i = 0; i < 14; i++) {
+      const band = rnd();                            // 0 high in the sky … 1 near horizon
+      const y = skyH * (0.12 + 0.82 * band);
+      const x = rnd() * cw;
+      const scale = (1 - band * 0.55) * Math.min(cw, ch);
+      const w = scale * (0.10 + rnd() * 0.14);
+      const h = w * (0.32 + rnd() * 0.2);
+      const n = 6 + Math.floor(rnd() * 5);
+      for (let j = 0; j < n; j++) {                  // grey-blue underside first
+        const bx = x + (rnd() - 0.5) * 2 * w, by = y + (rnd() - 0.3) * h;
+        puff(bx, by + h * 0.35, h * (0.5 + rnd() * 0.6), 0.05, '150,168,196');
+      }
+      for (let j = 0; j < n; j++) {                  // sunlit body
+        const bx = x + (rnd() - 0.5) * 2 * w, by = y + (rnd() - 0.5) * h;
+        puff(bx, by, h * (0.45 + rnd() * 0.55), 0.09);
+      }
+      puff(x, y - h * 0.2, h * 0.8, 0.10);           // bright top
     }
   }
 
@@ -740,6 +820,18 @@ export function createEclipse(ctx) {
       }
     }
   }
+  // Drifting cumulus layer — fades out as the eclipse darkens the sky.
+  function drawClouds(tw) {
+    if (!cloudsCv) return;
+    const a = 0.9 * (1 - 0.9 * clamp(tw, 0, 1));
+    if (a <= 0.02) return;
+    const skyH = ch * 0.8;
+    const drift = ((clock * 1.5) % cw + cw) % cw;
+    g.save(); g.globalAlpha = a;
+    g.drawImage(cloudsCv, drift - cw, 0, cw, skyH);
+    g.drawImage(cloudsCv, drift, 0, cw, skyH);
+    g.restore();
+  }
   function planetDot(x, y, r, I, col) {
     g.save(); g.globalCompositeOperation = 'lighter';
     const gd = g.createRadialGradient(x, y, 0, x, y, r * 4);
@@ -758,9 +850,9 @@ export function createEclipse(ctx) {
   }
 
   // --- The Sun (partial phase) -------------------------------------------
-  // Tight glare that SHRINKS as coverage grows, so the crescent becomes
-  // readable, plus four soft diffraction spikes. Replaces the old huge halo +
-  // full-frame veil + white blowout (the "flat grey wash").
+  // Tight glare that SHRINKS as coverage grows (so the crescent becomes
+  // readable), a prebaked photographic starburst, and a few restrained
+  // chromatic flare ghosts along the lens axis.
   function drawSunGlare(ox, oy, R, B) {
     B = clamp(B, 0, 1); if (B <= 0.02) return;
     g.save(); g.globalCompositeOperation = 'lighter';
@@ -771,15 +863,24 @@ export function createEclipse(ctx) {
     gr.addColorStop(0.35, `rgba(255,240,210,${0.18 * B})`);
     gr.addColorStop(1, 'rgba(255,240,210,0)');
     g.fillStyle = gr; g.beginPath(); g.arc(ox, oy, rad, 0, 7); g.fill();
-    const sp = R * (2.2 + 2.4 * B);
-    for (const a of [0, Math.PI / 2]) {
-      g.save(); g.translate(ox, oy); g.rotate(a);
-      const lg = g.createLinearGradient(-sp, 0, sp, 0);
-      lg.addColorStop(0, 'rgba(255,250,240,0)');
-      lg.addColorStop(0.5, `rgba(255,250,240,${0.10 * B})`);
-      lg.addColorStop(1, 'rgba(255,250,240,0)');
-      g.fillStyle = lg; g.fillRect(-sp, -R * 0.02, 2 * sp, R * 0.04);
-      g.restore();
+    if (sunburstCv) {
+      const s = R * 14 * (0.55 + 0.45 * B);
+      g.globalAlpha = B;
+      g.drawImage(sunburstCv, ox - s / 2, oy - s / 2, s, s);
+      g.globalAlpha = 1;
+    }
+    const gxv = cw / 2 - ox, gyv = ch * 0.68 - oy;   // lens axis: sun → frame centre-low
+    const ghosts = [
+      { k: 0.35, r: 0.10, c: '150,240,205', a: 0.12 },
+      { k: 0.55, r: 0.055, c: '140,255,170', a: 0.16 },
+      { k: 0.78, r: 0.14, c: '190,160,255', a: 0.08 },
+    ];
+    for (const gh of ghosts) {
+      const px = ox + gxv * gh.k, py = oy + gyv * gh.k, rr = R * gh.r * (2 + 2 * B);
+      const gd = g.createRadialGradient(px, py, 0, px, py, rr);
+      gd.addColorStop(0, `rgba(${gh.c},${(gh.a * B).toFixed(3)})`);
+      gd.addColorStop(1, `rgba(${gh.c},0)`);
+      g.fillStyle = gd; g.beginPath(); g.arc(px, py, rr, 0, 7); g.fill();
     }
     g.restore();
   }
@@ -915,6 +1016,7 @@ export function createEclipse(ctx) {
 
     drawSolarSky(tw);
     drawHorizonGlow(tw);
+    drawClouds(tw);
     drawSolarStars(isTotal ? 1 : clamp((tw - 0.45) * 1.8, 0, 1), cx, cy, R);
 
     if (isTotal) {
