@@ -35,6 +35,48 @@ function fmt(key, values) {
   return tr(key).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? '');
 }
 
+// Fraction of the Sun's apparent AREA hidden by the Moon. Eclipse magnitude is
+// a diameter measurement and cannot be used as a light/obscuration percentage.
+function circleObscuration(sunR, moonR, separation) {
+  if (separation >= sunR + moonR) return 0;
+  if (separation <= Math.abs(sunR - moonR)) {
+    return Math.min(1, (moonR * moonR) / (sunR * sunR));
+  }
+
+  const s2 = separation * separation;
+  const sr2 = sunR * sunR;
+  const mr2 = moonR * moonR;
+  const sunAngle = Math.acos((s2 + sr2 - mr2) / (2 * separation * sunR));
+  const moonAngle = Math.acos((s2 + mr2 - sr2) / (2 * separation * moonR));
+  const lens = 0.5 * Math.sqrt(
+    (-separation + sunR + moonR) *
+    (separation + sunR - moonR) *
+    (separation - sunR + moonR) *
+    (separation + sunR + moonR),
+  );
+  return Math.max(0, Math.min(1, (sr2 * sunAngle + mr2 * moonAngle - lens) / (Math.PI * sr2)));
+}
+
+function smoothstep(edge0, edge1, value) {
+  const x = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return x * x * (3 - 2 * x);
+}
+
+// The exposed photosphere keeps the same surface radiance throughout every
+// partial phase (NASA TP-2001-209990). Only its visible area changes. Human eye
+// adaptation also keeps daylight looking bright until obscuration exceeds ~90%,
+// while even a 1% crescent remains dazzling and unsafe to view directly.
+function solarVisualLevels(obscuration, total) {
+  if (total) return { twilight: 1, glare: 0, blowout: 0 };
+  const visible = Math.max(0, 1 - obscuration);
+  const latePartial = smoothstep(0.90, 0.999, obscuration);
+  return {
+    twilight: Math.pow(latePartial, 1.6),
+    glare: visible > 0 ? Math.pow(visible, 0.12) : 0,
+    blowout: visible > 0 ? Math.pow(visible, 0.08) : 0,
+  };
+}
+
 // ---------------------------------------------------------------------------
 //  GLSL — the rig's custom shaders. The renderer uses a logarithmic depth
 //  buffer, so every fragment/vertex pair MUST carry the logdepthbuf chunks
@@ -997,15 +1039,59 @@ export function createEclipse(ctx) {
     g.restore();
   }
 
+  // Sensor/eye veiling glare spills across the lunar contact edge. Keep the
+  // geometric core dark, but let soft white-blue light eat into it instead of
+  // leaving a razor-sharp black paper cut-out.
+  function drawOccultationBleed(cx, cy, R, mx, my, rM, B, c) {
+    const strength = clamp(B * smoothstep(0.01, 0.18, c), 0, 1);
+    if (strength <= 0.02) return;
+
+    g.save();
+    // All veiling light stays inside the actually occulted part of the Sun.
+    g.beginPath(); g.arc(cx, cy, R * 1.004, 0, 7); g.clip();
+    g.beginPath(); g.arc(mx, my, rM * 1.004, 0, 7); g.clip();
+    g.globalCompositeOperation = 'lighter';
+
+    // A faint stray-light floor lifts the silhouette without revealing lunar
+    // texture; the final hairline marks the hottest contact edge.
+    g.fillStyle = `rgba(205,225,255,${0.045 * strength})`;
+    g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+    const sunEdge = 1 - smoothstep(0.45, 0.90, c);
+    const strokeMoonBoundary = () => {
+      g.beginPath(); g.arc(mx, my, rM, 0, 7); g.stroke();
+    };
+    const strokeSunBoundary = () => {
+      g.beginPath(); g.arc(cx, cy, R, 0, 7); g.stroke();
+    };
+    // Closely spaced low-alpha bands form a smooth inward falloff. This is both
+    // more predictable and cheaper than a large animated canvas blur.
+    for (let i = 12; i >= 1; i--) {
+      const p = i / 12;
+      g.strokeStyle = `rgba(232,245,255,${0.038 * strength})`;
+      g.lineWidth = Math.max(1, R * (0.04 + 0.44 * p));
+      strokeMoonBoundary();
+      if (sunEdge > 0.01) {
+        g.strokeStyle = `rgba(232,245,255,${0.038 * strength * sunEdge})`;
+        strokeSunBoundary();
+      }
+    }
+    g.strokeStyle = `rgba(255,255,255,${0.78 * strength})`;
+    g.lineWidth = Math.max(1, R * 0.012);
+    strokeMoonBoundary();
+    if (sunEdge > 0.01) {
+      g.strokeStyle = `rgba(255,255,255,${0.78 * strength * sunEdge})`;
+      strokeSunBoundary();
+    }
+    g.restore();
+  }
+
   function drawSolar() {
     const { cx, cy, R, rM, mx, my, sep } = solarGeom();
-    const c = clamp((R + rM - sep) / (2 * R), 0, 1);          // ~coverage of the Sun
+    const c = circleObscuration(R, rM, sep);
     const isTotal = !annular && sep <= (rM - R);
     const gap = sep - (rM - R);                                // >0 partial, ≤0 total
-    // Perceptual dimming: the eye barely notices until ~60% coverage, then the
-    // light drains fast (annular never gets fully dark — a ring remains).
-    const dusk = Math.pow(clamp((c - 0.55) / 0.45, 0, 1), 1.6) * (annular ? 0.55 : 1);
-    const tw = isTotal ? 1 : dusk;
+    const visual = solarVisualLevels(c, isTotal);
+    const tw = visual.twilight;
     horizonWarm = tw;
 
     drawSolarSky(tw);
@@ -1022,12 +1108,15 @@ export function createEclipse(ctx) {
       return;
     }
 
-    const B = Math.pow(1 - c, 0.25);   // remaining sunlight stays high until near totality
+    const B = visual.glare;
     const ux = cx - mx, uy = cy - my, ul = Math.hypot(ux, uy) || 1;   // toward the bright crescent
     const ox = cx + (ux / ul) * R * 0.55 * c, oy = cy + (uy / ul) * R * 0.55 * c;
 
     drawSunGlare(ox, oy, R, B);        // tight glare + diffraction spikes
     drawSunDisk(cx, cy, R);            // overexposed white-hot disk
+    // White-out belongs to the still-exposed photosphere, not to the Moon. Draw
+    // it first, then restore the Moon's opaque silhouette over the top.
+    drawSunBlowout(ox, oy, R, visual.blowout);
     // Moon silhouette (earthshine texture, veiled) — clipped to the Sun's disc:
     // to the naked eye the Moon is only visible as a bite out of the Sun, never
     // as a dark disc floating in the bright sky.
@@ -1042,17 +1131,16 @@ export function createEclipse(ctx) {
       g.beginPath(); g.arc(mx, my, rM * 1.01, ra - 1.05, ra + 1.05); g.stroke();
       g.restore();
     }
-    // Blinding until the Moon has eaten well into the disc (~45% coverage).
-    drawSunBlowout(ox, oy, R, clamp(1 - c * 2.2, 0, 1));
     drawCrescentBloom(cx, cy, R, mx, my, B, c);   // bright crescent bleeds over the Moon's edge
 
     // Last/first moments: inner corona emerges, then Baily's beads → diamond ring.
     if (!annular && gap < R * 0.18) {
       drawCoronaSprite(mx, my, rM, clamp(1 - gap / (R * 0.18), 0, 1) * 0.6);
       drawMoonDark(mx, my, rM);              // keep the Moon dark over the corona's inner glow
+      drawOccultationBleed(cx, cy, R, mx, my, rM, B, c);
       if (gap < R * 0.05) diamondRing(cx, cy, R, rM, mx, my, gap);
       else bailysBeads(cx, cy, R, rM, mx, my, gap);
-    }
+    } else drawOccultationBleed(cx, cy, R, mx, my, rM, B, c);
   }
 
   function drawLunar() {
@@ -1151,7 +1239,7 @@ export function createEclipse(ctx) {
     let name = '—', pct = '';
     if (type === 'solar') {
       const { R, rM, sep } = solarGeom();
-      const covered = Math.min(1, Math.max(0, (R + rM - sep) / (2 * R)));
+      const covered = circleObscuration(R, rM, sep);
       pct = fmt('eclPctCovered', { pct: Math.round(covered * 100) });
       if (!annular && sep <= rM - R) name = tr('eclPhaseSolarTotal');
       else if (annular && sep <= R - rM) name = tr('eclPhaseSolarAnnular');
