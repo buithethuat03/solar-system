@@ -33,6 +33,11 @@ renderer.toneMappingExposure = 1.0;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
+// All Solar-System objects live under one movable root. Re-centering this root
+// around a metre-scale spacecraft preserves GPU precision billions of km out;
+// eclipse geometry remains in ordinary scene coordinates.
+const systemRoot = new THREE.Group();
+scene.add(systemRoot);
 // Far plane reaches past Eris' aphelion (~3.7M units) plus the background shells.
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 4.0e7);
 camera.position.set(0, 120, 320);
@@ -110,7 +115,7 @@ const state = {
 // Overlay Vietnamese onto the dataset (if selected) BEFORE building, so labels,
 // the navigator and the info panel all pick up the translated names/text.
 applyBodyTranslations(SUN, PLANETS, MOONS, VOYAGERS);
-const system = buildSolarSystem(scene, loader, onPick, state.distanceMode, TEX_RES);
+const system = buildSolarSystem(systemRoot, loader, onPick, state.distanceMode, TEX_RES);
 
 // ---------------------------------------------------------------------------
 //  Post-processing — SELECTIVE bloom: only the Sun (and the eclipse Sun) glow.
@@ -243,6 +248,7 @@ const focusAnim = { active: false, start: 0, dur: 1.1, storedDir: new THREE.Vect
 const followPrev = new THREE.Vector3();
 let followObj = null;
 const tmpV = new THREE.Vector3();
+const originShift = new THREE.Vector3();
 
 function bodyWorldPos(object3D, out) {
   object3D.getWorldPosition(out);
@@ -253,6 +259,34 @@ function bodyRadius(object3D) {
   return (object3D.geometry?.boundingSphere?.radius || 5) * object3D.getWorldScale(tmpV).x;
 }
 
+function setDefaultCameraLimits() {
+  const trueScale = state.distanceMode !== 'visual';
+  camera.near = 0.05;
+  controls.minDistance = trueScale ? 0.05 : 3;
+  controls.maxDistance = trueScale ? 1.0e7 : 14000;
+  camera.updateProjectionMatrix();
+}
+
+// Move the complete orrery (not the camera) so `object3D` is near world origin,
+// then shift the camera by the same amount. The rendered view does not jump, but
+// model/view matrices no longer subtract two multi-million-unit float values to
+// reveal a spacecraft only a few millionths of a unit wide.
+function rebaseAround(object3D, preserveView = true) {
+  bodyWorldPos(object3D, originShift);
+  if (originShift.lengthSq() < 1e-24) return;
+  systemRoot.position.sub(originShift);
+  if (preserveView) {
+    camera.position.sub(originShift);
+    controls.target.sub(originShift);
+    if (focusAnim.active) {
+      focusAnim.fromPos.sub(originShift);
+      focusAnim.toPos.sub(originShift);
+      focusAnim.fromTgt.sub(originShift);
+      focusAnim.toTgt.sub(originShift);
+    }
+  }
+}
+
 function focusOn(object3D) {
   if (!object3D) return;
   // Never fly to a hidden spacecraft (e.g. nav-clicked in the compressed view, or
@@ -260,13 +294,28 @@ function focusOn(object3D) {
   // and the focus animation bypasses the zoom limit, which would strand the camera.
   if (object3D.userData?.kind === 'spacecraft' &&
       !(state.showSpacecraft && state.distanceMode !== 'visual')) return;
+  const isSpacecraft = object3D.userData?.kind === 'spacecraft';
+  const explicitRadius = object3D.userData?.focusRadius;
+  // The loading screen normally guarantees this is ready. If the model failed to
+  // load, keep selection working but do not fly into an undefined microscopic view.
+  if (isSpacecraft && !(explicitRadius > 0)) return;
+
+  rebaseAround(object3D);
   const target = bodyWorldPos(object3D, new THREE.Vector3());
-  // Voyagers carry an explicit focusRadius: their visible model is a screen-relative
-  // gizmo, so a geometry-derived radius would be camera-dependent and unstable.
-  const r = object3D.userData?.focusRadius ?? bodyRadius(object3D);
+  const r = explicitRadius ?? bodyRadius(object3D);
+  if (isSpacecraft) {
+    // Frame Voyager from only a few real bounding radii away. A near plane tied
+    // to its physical radius permits metre-scale dolly/orbit without clipping.
+    camera.near = Math.max(r * 0.02, 1e-10);
+    controls.minDistance = r * 1.15;
+    controls.maxDistance = 1.0e7;
+    camera.updateProjectionMatrix();
+  } else {
+    setDefaultCameraLimits();
+  }
   // Frame the body at ~5.5 radii. A small floor (not the old fixed 8) lets tiny
   // bodies be inspected up close in the true-scale view, where they are specks.
-  const dist = Math.max(r * 5.5, 0.5);
+  const dist = isSpacecraft ? r * 3.2 : Math.max(r * 5.5, 0.5);
   const dir = tmpV.copy(camera.position).sub(controls.target).normalize();
   focusAnim.storedDir.copy(dir);     // keep dir+dist so toPos can track the moving body
   focusAnim.storedDist = dist;
@@ -369,6 +418,7 @@ const controller = {
       ui.setLive(false, '');
     }
     state.distanceMode = mode;
+    systemRoot.position.set(0, 0, 0);
     system.setDistanceMode(mode);
     ui.setSpacecraftNavVisible(mode !== 'visual');   // craft only exist in the true-scale views
 
@@ -376,10 +426,9 @@ const controller = {
     // ~1,000 units, while the true-scale views span from a sub-unit moon up close
     // to dwarf planets millions of units out.
     const trueScale = (mode !== 'visual');
-    controls.minDistance = trueScale ? 0.05 : 3;
     // Far enough to dolly out and take in the Voyagers (~170+ AU ≈ 6.4M units),
     // yet still well inside the foreground starfield (~1.3e7) and sky (2e7).
-    controls.maxDistance = trueScale ? 1.0e7 : 14000;
+    setDefaultCameraLimits();
 
     if (mode === 'accurate') {
       if (!wasAccurate) orbitsBeforeAccurate = state.showOrbits;
@@ -423,6 +472,8 @@ const controller = {
   stopFollow,
   resetView() {
     focusAnim.active = false;
+    systemRoot.position.set(0, 0, 0);
+    setDefaultCameraLimits();
     if (state.distanceMode === 'accurate') {
       // Re-frame the drifting Sun and keep riding along with it.
       controls.target.copy(system.sunMesh.position);
@@ -546,7 +597,7 @@ function applyKeyboardMove(dt) {
 //  Animation loop
 // ---------------------------------------------------------------------------
 // Debug / power-user hook: inspect from the browser console (e.g. SOLAR.state).
-window.SOLAR = { THREE, scene, camera, controls, system, state, controller, eclipse };
+window.SOLAR = { THREE, scene, systemRoot, camera, controls, system, state, controller, eclipse };
 
 const clock = new THREE.Clock();
 let frames = 0, fpsT = 0;
@@ -556,13 +607,13 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.1);
 
   applyKeyboardMove(dt);   // WASD / arrow-key fly-through (works in both modes)
-  system.sky.position.copy(camera.position);    // skybox follows the camera (always present)
-  system.stars.position.copy(camera.position);
 
   // Eclipse mode runs its own simulation; the orrery is hidden.
   if (eclipse.isActive()) {
     eclipse.update(dt);
     controls.update();
+    system.sky.position.copy(camera.position).sub(systemRoot.position);
+    system.stars.position.copy(camera.position).sub(systemRoot.position);
     renderFrame();
     labelRenderer.render(scene, camera);
     return;
@@ -570,6 +621,17 @@ function animate() {
 
   if (!state.paused) state.simDays += dt * state.speed * state.direction;
   system.update(state.simDays);
+
+  const followingSpacecraft = state.following && followObj?.userData?.kind === 'spacecraft';
+  if (followingSpacecraft) {
+    // Voyager continues moving even while focused. Rebase every frame so it stays
+    // at a numerically stable origin at real-time and accelerated simulation rates.
+    // The initial focus rebase shifts camera + world together to avoid a visual
+    // jump. Here the world alone follows the moving craft; shifting the camera
+    // too would count Voyager's motion twice and drift the aim off target.
+    rebaseAround(followObj, false);
+    followPrev.set(0, 0, 0);
+  }
 
   // Camera focus animation (wall-clock driven, so it is frame-rate independent)
   if (focusAnim.active) {
@@ -581,7 +643,7 @@ function animate() {
     camera.position.lerpVectors(focusAnim.fromPos, focusAnim.toPos, e);
     controls.target.lerpVectors(focusAnim.fromTgt, focusAnim.toTgt, e);
     if (k >= 1) { focusAnim.active = false; bodyWorldPos(followObj, followPrev); }
-  } else if (state.following && followObj) {
+  } else if (state.following && followObj && !followingSpacecraft) {
     // rigidly track the body's motion while preserving manual orbit
     bodyWorldPos(followObj, tmpV);
     const dx = tmpV.x - followPrev.x, dy = tmpV.y - followPrev.y, dz = tmpV.z - followPrev.z;
@@ -591,7 +653,11 @@ function animate() {
   }
 
   controls.update();
-  system.scaleVoyagersToCamera(camera);   // keep the craft a sensible on-screen size
+  system.orientVoyagers();   // physical mesh scale is fixed; only aim its dish
+  // Backdrop objects are children of the movable system root, so express the
+  // camera position in that root's local coordinates.
+  system.sky.position.copy(camera.position).sub(systemRoot.position);
+  system.stars.position.copy(camera.position).sub(systemRoot.position);
 
   renderFrame();
   labelRenderer.render(scene, camera);

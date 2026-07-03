@@ -35,28 +35,13 @@ const SUN_TRAIL_DAYS = 10 * 365.25;
 // clutters the view and loses precision; 10 yr is a long but clean local wake.
 const MAX_TRAIL_DAYS = 10 * 365.25;
 
-// Voyager rendering. A real spacecraft is ~10 m across — at true scale (1 unit ≈
-// 3,982 km) that is ~2.5e-6 units, far below a pixel. The model size depends on
-// how close the camera is to the craft, in three regimes (smoothly blended):
-//   • INSPECT  (d ≤ VOY_INSPECT_DIST): a fixed-size gizmo (VOY_INSPECT_UNITS) you
-//     can examine — smaller than any giant planet, so it never engulfs one, and
-//     it grows as you dolly in. This is where the focus/follow button lands.
-//   • REAL     (mid range): the true physical size — a sub-pixel speck, correctly
-//     dwarfed by the planets when you are looking at a planet from outside.
-//   • ICON     (d ≥ VOY_ICON_DIST): a small constant on-screen locator so the
-//     craft is findable in a whole-system view.
-// The text label is drawn at every zoom, so the craft is always locatable even
-// when its model is too small to see. So: click the craft → fly in → inspect it;
-// pull back out → it shrinks to its honest size next to the planets.
-const VOY_TRUE_RADIUS_M  = 10;       // Voyager bounding radius in metres (~13 m boom span)
-const VOY_KM_PER_UNIT    = CONFIG.KM_PER_AU / CONFIG.DIST_REAL_K;          // ≈ 3,982 km/unit
-const VOY_TRUE_UNITS     = (VOY_TRUE_RADIUS_M / 1000) / VOY_KM_PER_UNIT;   // real model radius (≈ 2.5e-6 u)
-const VOY_INSPECT_DIST   = 12;       // camera within this (≈ 48,000 km) → inspect gizmo
-const VOY_INSPECT_UNITS  = 2.7;      // inspect-gizmo world radius (≈ 10,700 km; < any giant planet)
-const VOY_ICON_DIST      = 150000;   // camera beyond this (≈ 4 AU) → small locator icon
-const VOY_ICON_FRAC      = 0.04;     // locator radius as a fraction of viewport half-height
-const VOY_BLEND          = 4;        // multiplicative width of the smoothstep transitions
-const VOY_FOCUS_RADIUS   = 2;        // focus framing radius → lands inside the inspect range (≈ 11 u)
+// Voyager rendering. NASA lists a 3.7 m high-gain dish and a 13 m magnetometer
+// boom. That makes the craft sub-pixel at planetary zoom, so the mesh must stay
+// physically tiny while its separate CSS label keeps the location discoverable.
+// The official NASA glTF uses metres. Keep its mesh on the same physical ruler
+// as the planets; the CSS label, rather than an enlarged mesh, is the locator.
+const VOY_KM_PER_UNIT     = CONFIG.KM_PER_AU / CONFIG.DIST_REAL_K; // ≈ 3,982 km/unit
+const VOY_METRES_TO_UNITS = 1 / (1000 * VOY_KM_PER_UNIT);         // ≈ 2.51e-7 unit/m
 
 // Texture resolution. 'low' = the default 2K set in textures/; 'high' = the
 // high-res (up to 8K) set in textures/8k/ with identical file names. Every
@@ -633,14 +618,15 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
 
   // ----- Interstellar spacecraft (Voyager 1 & 2) ---------------------------
   // Each craft is a group anchored at its true scene position. A child pivot
-  // holds the model and is rescaled for apparent size every frame. The real NASA
-  // glTF model (public-domain, NASA/VTAD) is loaded once and cloned into each.
+  // holds the model at one fixed physical scale. The real NASA glTF model
+  // (public-domain, NASA/VTAD) is loaded once and cloned into each.
   const voyagers = [];
   const gltfLoader = new GLTFLoader(loader.manager);   // shares the loading-screen manager
   for (const data of VOYAGERS) {
     const group = new THREE.Group();
     group.visible = (distMode !== 'visual');           // true-scale views only
-    group.userData = { kind: 'spacecraft', ref: data, focusRadius: VOY_FOCUS_RADIUS };
+    // focusRadius is filled from the loaded model's real metre-scale bounds.
+    group.userData = { kind: 'spacecraft', ref: data, focusRadius: null };
     scene.add(group);
     // Make the craft findable by id (nav list, selectById/focusById) up front —
     // independent of the async glTF load, and robust if the model ever fails to
@@ -660,6 +646,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     const voyager = {
       data, group, modelPivot, label,
       model: null, meshes: [],
+      trueRadiusUnits: 0,
       baseVisible: group.visible,
       labelBaseVisible: group.visible,
       launched: false,
@@ -714,6 +701,11 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         vo.meshes.push(o);
       });
       vo.model = m;
+      // The normalised child has radius 1. Restore the NASA model's source radius
+      // (metres) on the shared physical scene ruler; this scale stays constant.
+      vo.trueRadiusUnits = sphere.radius * VOY_METRES_TO_UNITS;
+      vo.modelPivot.scale.setScalar(vo.trueRadiusUnits);
+      vo.group.userData.focusRadius = vo.trueRadiusUnits;
       vo.modelPivot.add(m);
     }
   }, undefined, (err) => console.warn('Voyager model failed to load:', err));
@@ -967,37 +959,14 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     lastSimDays = simDays;
   }
 
-  // Distance-aware sizing for the Voyager models. Called every frame from main.js
-  // (which owns the camera). Three regimes by camera↔craft distance, blended with
-  // smoothstep: INSPECT (very close → a fixed gizmo you can examine, < any giant
-  // planet); REAL (mid → true physical size, honestly tiny next to a planet); ICON
-  // (very far → a small on-screen locator). No feedback loop — size depends only on
-  // the distance, never on the craft's own size. Also aims the dish toward the Sun.
-  const _vw = new THREE.Vector3();
-  const _smooth = (u) => u * u * (3 - 2 * u);
-  function scaleVoyagersToCamera(camera) {
-    const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  // The model scale is deliberately camera-independent. This prevents a locator
+  // aid from masquerading as a planet-sized spacecraft; only aim it at the Sun.
+  const _voySunWorld = new THREE.Vector3();
+  function orientVoyagers() {
+    sunMesh.getWorldPosition(_voySunWorld);
     for (const vo of voyagers) {
       if (!vo.group.visible) continue;
-      vo.group.getWorldPosition(_vw);
-      const d = camera.position.distanceTo(_vw);
-      const sIcon = d * halfH * VOY_ICON_FRAC;                 // far locator (constant on-screen size)
-      let s;
-      if (d <= VOY_INSPECT_DIST) {
-        s = VOY_INSPECT_UNITS;                                 // inspect: fixed gizmo (grows as you dolly in)
-      } else if (d <= VOY_INSPECT_DIST * VOY_BLEND) {          // inspect → real
-        const e = _smooth((d - VOY_INSPECT_DIST) / (VOY_INSPECT_DIST * (VOY_BLEND - 1)));
-        s = VOY_INSPECT_UNITS * (1 - e) + VOY_TRUE_UNITS * e;
-      } else if (d < VOY_ICON_DIST) {
-        s = VOY_TRUE_UNITS;                                    // real: honest physical scale, tiny vs planets
-      } else if (d < VOY_ICON_DIST * VOY_BLEND) {              // real → icon
-        const e = _smooth((d - VOY_ICON_DIST) / (VOY_ICON_DIST * (VOY_BLEND - 1)));
-        s = VOY_TRUE_UNITS * (1 - e) + sIcon * e;
-      } else {
-        s = sIcon;                                             // far: small locator icon
-      }
-      vo.modelPivot.scale.setScalar(s);
-      vo.modelPivot.lookAt(sunMesh.position);   // dish roughly toward the Sun (≈ Earth)
+      vo.modelPivot.lookAt(_voySunWorld);   // dish roughly toward the Sun (≈ Earth)
     }
   }
 
@@ -1016,7 +985,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     sunMesh, sunLabel, sunLight, glow, ambient, sky, stars,
     planets, orbitLines, labels, selectable, belts,
     asteroidBelt, kuiperBelt, drift, trails, voyagers,
-    update, setDistanceMode, setDriftMode, scaleVoyagersToCamera,
+    update, setDistanceMode, setDriftMode, orientVoyagers,
     getDistFn: () => distFn,
   };
 }
