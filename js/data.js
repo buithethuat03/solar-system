@@ -84,6 +84,194 @@ export const SUN = {
   ],
 };
 
+// Nearby stellar-mass black holes -------------------------------------------
+//
+// Gaia BH1 has a real logical position hundreds of parsecs from the origin.
+// The renderer derives that Float64 position from ICRS direction + parallax and
+// uses a moving/floating origin before coordinates reach the Float32 GPU. This
+// preserves both the true interstellar separation and kilometre-scale detail
+// near the black hole without pretending that the parallax distance is exact.
+//
+// A published best-fit value and a value calculated from it are not the same
+// kind of information.  Every quantity below is therefore tagged `measured`
+// (meaning a reported observational/catalogue or fitted result); quantities
+// calculated from these values are returned separately by blackhole-physics.js
+// with `provenance: 'derived'`.  Rendering choices live under
+// `modelAssumptions` and are explicitly tagged as such.
+const blackHoleQuantity = (value, uncertainty, unit, sourceIds, method = null) => ({
+  value,
+  uncertainty,
+  unit,
+  provenance: 'measured',
+  sourceIds,
+  ...(method ? { method } : {}),
+});
+
+const gaiaBh1Ra = blackHoleQuantity(
+  262.17120816, null, 'deg', ['el-badry-2023'], 'Gaia DR3 astrometry',
+);
+const gaiaBh1Dec = blackHoleQuantity(
+  -0.58109202, null, 'deg', ['el-badry-2023'], 'Gaia DR3 astrometry',
+);
+const gaiaBh1Mass = blackHoleQuantity(
+  9.27, 0.10, 'solar-mass', ['nagarajan-2024'],
+  'joint radial-velocity and Gaia-astrometry dynamical fit',
+);
+
+export const BLACK_HOLES = [
+  {
+    id: 'gaia-bh1',
+    name: 'Gaia BH1',
+    type: 'Black Hole Binary',
+    kind: 'black-hole',
+
+    // Keep the Gaia identifier as a string: its 19 digits are not exactly
+    // representable by a JavaScript Number.
+    sourceId: '4373465352415301632',
+    sourceCatalog: 'Gaia DR3',
+
+    coordinates: {
+      frame: 'ICRS',
+      epoch: 'J2016.0',
+      raDeg: gaiaBh1Ra,
+      decDeg: gaiaBh1Dec,
+      // Long-form alias retained for self-documenting consumers.
+      declinationDeg: gaiaBh1Dec,
+      parallaxMas: blackHoleQuantity(
+        2.09, 0.02, 'mas', ['el-badry-2023'], 'joint astrometric-spectroscopic fit',
+      ),
+    },
+
+    // Top-level fields make the object's defining properties easy to inspect;
+    // `blackHole` groups the same values for physics/rendering consumers.
+    massSolar: gaiaBh1Mass,
+    spin: null,
+    accretionEvidence: 'none_detected',
+    blackHole: {
+      massSolar: gaiaBh1Mass,
+      spin: null,
+      spinProvenance: 'unknown',
+      accretionEvidence: 'none_detected',
+      accretionEvidenceSourceIds: ['el-badry-2023'],
+    },
+
+    companion: {
+      kind: 'star',
+      spectralDescription: 'solar-type G star',
+      massSolar: blackHoleQuantity(
+        0.93, 0.05, 'solar-mass', ['el-badry-2023'], 'stellar-model fit',
+      ),
+      radiusSolar: blackHoleQuantity(
+        0.99, 0.05, 'solar-radius', ['el-badry-2023'], 'spectral-energy-distribution fit',
+      ),
+      effectiveTemperatureK: blackHoleQuantity(
+        5850, 50, 'K', ['el-badry-2023'], 'spectroscopic fit',
+      ),
+      luminositySolar: blackHoleQuantity(
+        1.06, 0.04, 'solar-luminosity', ['el-badry-2023'], 'spectral-energy-distribution fit',
+      ),
+    },
+
+    orbit: {
+      reference: 'companion relative to the black hole; joint orbital solution',
+      periodDays: blackHoleQuantity(185.387, 0.003, 'day', ['nagarajan-2024']),
+      eccentricity: blackHoleQuantity(0.43230, 0.00002, 'dimensionless', ['nagarajan-2024']),
+      inclinationDeg: blackHoleQuantity(126.8, 0.2, 'deg', ['nagarajan-2024']),
+      ascendingNodeDeg: blackHoleQuantity(97.0, 0.7, 'deg', ['nagarajan-2024']),
+      argumentOfPeriastronDeg: blackHoleQuantity(16.509, 0.003, 'deg', ['nagarajan-2024']),
+      periastronJulianDate: blackHoleQuantity(2457391.07, 0.04, 'JD', ['nagarajan-2024']),
+      ephemerisMeaning:
+        'orbital phase inferred for observations received in the Solar System',
+    },
+
+    modelAssumptions: {
+      compactObjectMultiplicity: {
+        provenance: 'model-assumption',
+        value: 'single',
+        sourceIds: ['nagarajan-2024'],
+        reason:
+          'The favored two-body solution is rendered as one compact object; the published constraints do not completely exclude an unresolved, very short-period inner black-hole binary.',
+      },
+      schwarzschild: {
+        provenance: 'model-assumption',
+        dimensionlessSpin: 0,
+        reason:
+          'The spin of Gaia BH1 has not been measured, so the single-object close-up uses the minimum non-rotating model.',
+      },
+      locator: {
+        provenance: 'model-assumption',
+        screenSpaceProxy: true,
+        markerToScale: false,
+        logicalDistanceToScale: true,
+        floatingOrigin: true,
+        reason:
+          'The screen marker makes a sub-pixel interstellar target selectable; its logical 3D anchor uses the nominal distance derived from parallax on the true AU ruler.',
+      },
+      skyReference: {
+        provenance: 'model-assumption',
+        viewpoint: 'Solar System',
+      },
+    },
+
+    description:
+      'Gaia BH1 is a nearby dormant black-hole system in Ophiuchus. A Sun-like ' +
+      'star follows a wide, eccentric orbit around an unseen object whose dynamical ' +
+      'mass requires at least one black hole. No bright accretion emission has been ' +
+      'detected, so the visualization does not add a luminous disc or jets.',
+    info: {
+      'Status': 'Dormant system containing at least one black hole',
+      'Gaia DR3 source': '4373465352415301632',
+      'Direction (ICRS, J2016.0)': 'RA 262.17120816 deg, Dec -0.58109202 deg',
+      'Parallax': '2.09 +/- 0.02 mas (measured)',
+      'Distance': '~478 pc (~1,560 light-years; derived from parallax)',
+      'Black-hole mass': '9.27 +/- 0.10 solar masses (dynamical fit)',
+      'Companion': 'Solar-type G star; 0.93 +/- 0.05 solar masses',
+      'Orbital period': '185.387 +/- 0.003 days',
+      'Eccentricity': '0.43230 +/- 0.00002',
+      'Spin': 'Not measured; close-up uses a non-spinning Schwarzschild model',
+      'Accretion': 'No bright accretion emission detected',
+      'Orrery locator': 'Screen proxy; logical 3D anchor uses the nominal parallax distance',
+    },
+    facts: [
+      'The companion star and the orbital solution require at least one dormant black hole.',
+      'The solar-type star completes one eccentric orbit every 185.387 days.',
+      'No bright accretion disc or jet has been detected, so none is invented in the scene.',
+      'Gaia BH1\'s spin has not been measured; zero spin is an explicit visualization assumption.',
+      'Its selectable marker is a screen proxy; floating-origin rendering keeps the logical 3D anchor at the nominal parallax distance.',
+    ],
+
+    sources: [
+      {
+        id: 'nagarajan-2024',
+        title: 'ESPRESSO Observations of Gaia BH1: High-precision Orbital Constraints and no Evidence for an Inner Binary',
+        citation: 'Nagarajan et al. 2024, PASP 136, 014202',
+        year: 2024,
+        doi: '10.1088/1538-3873/ad1ba7',
+        url: 'https://doi.org/10.1088/1538-3873/ad1ba7',
+        supports: ['blackHole.massSolar', 'orbit'],
+      },
+      {
+        id: 'el-badry-2023',
+        title: 'A Sun-like star orbiting a black hole',
+        citation: 'El-Badry et al. 2023, MNRAS 518, 1057-1085',
+        year: 2023,
+        doi: '10.1093/mnras/stac3140',
+        url: 'https://academic.oup.com/mnras/article/518/1/1057/6794289',
+        supports: ['coordinates', 'companion', 'blackHole.accretionEvidence'],
+      },
+      {
+        id: 'iau-2015-b3',
+        title: 'Nominal values for selected solar and planetary quantities: IAU 2015 Resolution B3',
+        citation: 'Prsa et al. 2016, AJ 152, 41',
+        year: 2016,
+        doi: '10.3847/0004-6256/152/2/41',
+        url: 'https://arxiv.org/abs/1510.07674',
+        supports: ['derived.schwarzschild', 'derived.binaryScale'],
+      },
+    ],
+  },
+];
+
 // Planets & dwarf planets ---------------------------------------------------
 // Orbital elements: a (AU), e, i (deg), om = Ω longitude of ascending node,
 // wbar = ϖ longitude of perihelion, L0 = mean longitude at J2000 (deg).

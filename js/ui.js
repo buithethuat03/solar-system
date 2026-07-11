@@ -3,6 +3,7 @@
 // ============================================================================
 import { t, MONTHS, DAYS } from './i18n.js';
 import { bindFullscreenToggle } from './fullscreen.js';
+import { deriveBlackHoleSystem } from './blackhole-physics.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -54,6 +55,7 @@ export function initUI(controller) {
     const item = document.createElement('button');
     item.className = 'nav-item ' + (cls || '');
     item.dataset.id = body.id;
+    item.dataset.kind = kind;
     const dot = document.createElement('span');
     dot.className = 'nav-dot';
     dot.style.background = '#' + (body.color ?? 0x888888).toString(16).padStart(6, '0');
@@ -81,6 +83,10 @@ export function initUI(controller) {
     controller.bodies.voyagers.forEach(v => spacecraftNavEls.push(addItem(v, 'spacecraft', 'is-spacecraft')));
     const scOn = s.distanceMode !== 'visual';
     spacecraftNavEls.forEach(el => { if (el) el.style.display = scOn ? '' : 'none'; });
+  }
+  if (controller.bodies.blackHoles && controller.bodies.blackHoles.length) {
+    addGroup(t('navBlackHoles'));
+    controller.bodies.blackHoles.forEach(b => addItem(b, 'black-hole', 'is-black-hole'));
   }
 
   // ---- Time controls ----------------------------------------------------
@@ -143,6 +149,7 @@ export function initUI(controller) {
   bind('tg-moons', 'showMoons');
   bind('tg-dwarfs', 'showDwarfs');
   bind('tg-spacecraft', 'showSpacecraft');
+  bind('tg-black-holes', 'showBlackHoles');
 
   const bloomTg = $('tg-bloom');
   if (bloomTg) { bloomTg.checked = s.bloom; bloomTg.addEventListener('change', () => controller.setBloom(bloomTg.checked)); }
@@ -226,20 +233,218 @@ export function initUI(controller) {
   // =======================================================================
   //  Public display API
   // =======================================================================
+  function provenanceLabel(value) {
+    if (typeof value !== 'string') return null;
+    const key = value.trim().toLowerCase().replace(/[\s_]+/g, '-');
+    if (['measured', 'measurement', 'observed', 'observation'].includes(key)) return { key: 'measured', text: t('evidenceMeasured') };
+    if (['derived', 'inferred', 'calculated', 'computed'].includes(key)) return { key: 'derived', text: t('evidenceDerived') };
+    if (['assumed', 'assumption', 'model', 'model-assumption', 'hypothetical'].includes(key)) return { key: 'model', text: t('evidenceModel') };
+    return null;
+  }
+
+  function appendProvenanceBadge(parent, value) {
+    const label = provenanceLabel(value);
+    if (!label) return;
+    const badge = document.createElement('small');
+    badge.className = 'info-provenance info-provenance-' + label.key;
+    badge.textContent = label.text;
+    parent.appendChild(badge);
+  }
+
+  function infoValueParts(raw) {
+    if (raw == null) return { text: '—', provenance: '' };
+    if (Array.isArray(raw)) return { text: raw.join(', '), provenance: '' };
+    if (typeof raw !== 'object') return { text: String(raw), provenance: '' };
+
+    const provenance = raw.provenance ?? raw.evidence ?? raw.category ?? raw.status ?? raw.kind ?? '';
+    if (raw.display != null) return { text: String(raw.display), provenance };
+    if (raw.text != null) return { text: String(raw.text), provenance };
+
+    let value = raw.value ?? raw.nominal ?? raw.label;
+    if (value && typeof value === 'object') {
+      const nested = value;
+      value = nested.value ?? nested.nominal ?? nested.text ?? nested.display;
+    }
+    if (value == null) {
+      try { value = JSON.stringify(raw); } catch { value = '—'; }
+    }
+    let text = String(value);
+    const uncertainty = raw.uncertainty ?? raw.error ?? raw.sigma;
+    if (uncertainty != null && uncertainty !== '') text += ` ± ${uncertainty}`;
+    const units = {
+      deg: '°', 'solar-mass': 'M☉', 'solar-radius': 'R☉',
+      'solar-luminosity': 'L☉', day: t('bhUnitDay'), dimensionless: '',
+    };
+    const unit = raw.unit ? (units[raw.unit] ?? raw.unit) : '';
+    if (unit) text += unit === '°' ? unit : ` ${unit}`;
+    return { text, provenance };
+  }
+
+  function safeSourceHref(source) {
+    let candidate = '';
+    if (typeof source === 'string') {
+      if (/^https?:\/\//i.test(source.trim())) candidate = source.trim();
+    } else {
+      candidate = source.url ?? source.href ?? source.link ?? '';
+      if (!candidate && typeof source.doi === 'string' && /^10\.\d{4,9}\//.test(source.doi)) {
+        candidate = `https://doi.org/${source.doi}`;
+      }
+    }
+    if (!candidate) return '';
+    try {
+      const url = new URL(candidate, document.baseURI);
+      return (url.protocol === 'https:' || url.protocol === 'http:') ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function blackHoleInfo(ref) {
+    const coordinates = ref.coordinates || {};
+    const blackHole = ref.blackHole || {};
+    const companion = ref.companion || {};
+    const orbit = ref.orbit || {};
+    const info = {};
+    const add = (label, value) => { if (value != null) info[label] = value; };
+    const derivedEntry = (value, digits, unit, uncertainty) => {
+      if (!Number.isFinite(value)) return null;
+      const entry = { value: value.toFixed(digits), unit, provenance: 'derived' };
+      if (Number.isFinite(uncertainty)) entry.uncertainty = uncertainty.toFixed(digits);
+      return entry;
+    };
+
+    add(t('bhSourceId'), ref.sourceId);
+    add(t('bhSourceCatalog'), ref.sourceCatalog);
+    add(t('bhCoordinateFrame'), coordinates.frame);
+    add(t('bhCoordinateEpoch'), coordinates.epoch);
+    add(t('bhRightAscension'), coordinates.raDeg);
+    add(t('bhDeclination'), coordinates.decDeg ?? coordinates.declinationDeg);
+    add(t('bhParallax'), coordinates.parallaxMas);
+    add(t('bhBlackHoleMass'), blackHole.massSolar ?? ref.massSolar);
+    add(t('bhCompanionMass'), companion.massSolar);
+    add(t('bhCompanionRadius'), companion.radiusSolar);
+    add(t('bhCompanionTemperature'), companion.effectiveTemperatureK);
+    add(t('bhCompanionLuminosity'), companion.luminositySolar);
+    add(t('bhOrbitalPeriod'), orbit.periodDays);
+    add(t('bhEccentricity'), orbit.eccentricity);
+    add(t('bhInclination'), orbit.inclinationDeg);
+    add(t('bhAscendingNode'), orbit.ascendingNodeDeg);
+    add(t('bhArgumentPeriastron'), orbit.argumentOfPeriastronDeg);
+    add(t('bhPeriastronEpoch'), orbit.periastronJulianDate);
+
+    try {
+      const derived = deriveBlackHoleSystem(ref);
+      add(t('bhDistance'), derivedEntry(derived.distancePc, 2, 'pc', derived.distanceUncertaintyPc));
+      add(t('bhSemiMajorAxis'), derivedEntry(derived.semimajorAxisAU, 5, 'AU'));
+      add(t('bhPeriapsis'), derivedEntry(derived.periapsisAU, 5, 'AU'));
+      add(t('bhApoapsis'), derivedEntry(derived.apoapsisAU, 5, 'AU'));
+      add(t('bhEventHorizon'), derivedEntry(derived.schwarzschild?.eventHorizonRadiusKm, 3, 'km'));
+      add(t('bhPhotonSphere'), derivedEntry(derived.schwarzschild?.photonSphereRadiusKm, 3, 'km'));
+      add(t('bhShadowDiameter'), derivedEntry(derived.schwarzschild?.shadowDiameterKm, 2, 'km'));
+      add(t('bhAngularShadow'), derivedEntry(derived.shadowAngularDiameterNanoarcsec, 5, 'nanoarcsec'));
+    } catch (error) {
+      console.warn('Unable to derive Gaia BH1 info-panel values:', error);
+    }
+
+    const spin = blackHole.spin ?? ref.spin;
+    add(t('bhSpin'), spin == null ? t('bhSpinUnknown') : spin);
+    const accretion = blackHole.accretionEvidence ?? ref.accretionEvidence;
+    if (accretion === 'none_detected') {
+      add(t('bhAccretionEvidence'), { value: t('bhNoAccretionDetected'), provenance: 'measured' });
+    } else {
+      add(t('bhAccretionEvidence'), accretion);
+    }
+    if (ref.modelAssumptions && ref.modelAssumptions.schwarzschild) {
+      add(t('bhCloseupModel'), { value: t('bhSchwarzschildAssumption'), provenance: 'model-assumption' });
+    }
+    if (ref.modelAssumptions && ref.modelAssumptions.compactObjectMultiplicity) {
+      add(t('bhCompactObjectModel'), { value: t('bhSingleObjectAssumption'), provenance: 'model-assumption' });
+    }
+    if (ref.modelAssumptions && ref.modelAssumptions.locator) {
+      add(t('bhLocatorScale'), { value: t('bhDirectionOnly'), provenance: 'model-assumption' });
+    }
+    return info;
+  }
+
+  function renderSources(ref) {
+    const old = document.querySelector('#info-panel .info-sources');
+    if (old) old.remove();
+    const sourceList = Array.isArray(ref.sources) ? ref.sources : (ref.sources ? [ref.sources] : []);
+    if (!sourceList.length) return;
+
+    const section = document.createElement('section');
+    section.className = 'info-sources';
+    const heading = document.createElement('h3');
+    heading.textContent = t('sources');
+    const listEl = document.createElement('ul');
+
+    if (ref.coordinates && ref.coordinates.epoch) {
+      const context = document.createElement('p');
+      context.className = 'info-source-context';
+      context.textContent = `${t('sourceEpoch')}: ${ref.coordinates.epoch}`;
+      section.appendChild(context);
+    }
+
+    sourceList.forEach((source, index) => {
+      if (source == null) return;
+      const item = document.createElement('li');
+      const href = safeSourceHref(source);
+      const label = typeof source === 'string'
+        ? source
+        : (source.title ?? source.label ?? source.name ?? source.citation ?? source.doi ?? href ?? `${t('source')} ${index + 1}`);
+      const textEl = href ? document.createElement('a') : document.createElement('span');
+      textEl.textContent = String(label);
+      if (href) {
+        textEl.href = href;
+        textEl.target = '_blank';
+        textEl.rel = 'noopener noreferrer';
+      }
+      item.appendChild(textEl);
+
+      if (typeof source === 'object') {
+        const metadata = [];
+        if (source.epoch) metadata.push(`${t('sourceEpoch')}: ${source.epoch}`);
+        if (source.citation && source.citation !== label) metadata.push(String(source.citation));
+        if (source.doi && !String(label).includes(source.doi)) metadata.push(`DOI ${source.doi}`);
+        if (source.note) metadata.push(String(source.note));
+        if (metadata.length) {
+          const meta = document.createElement('small');
+          meta.textContent = metadata.join(' · ');
+          item.appendChild(meta);
+        }
+        appendProvenanceBadge(item, source.provenance ?? source.evidence ?? source.category ?? source.kind);
+      }
+      listEl.appendChild(item);
+    });
+
+    if (!listEl.children.length) return;
+    section.prepend(heading);
+    section.appendChild(listEl);
+    $('info-panel').appendChild(section);
+  }
+
   return {
     showInfo(ref, kind) {
-      const typeLabel = ref.type || (kind === 'moon' ? t('typeMoon') : kind === 'sun' ? t('typeStar') : '');
+      const typeLabel = ref.type || (kind === 'moon' ? t('typeMoon') : kind === 'sun' ? t('typeStar') : kind === 'black-hole' ? t('typeBlackHole') : '');
       $('info-name').textContent = ref.name;
       $('info-type').textContent = typeLabel;
       $('info-desc').textContent = ref.description || '';
 
       const table = $('info-table');
       table.innerHTML = '';
-      const info = ref.info || {};
+      const isBlackHole = kind === 'black-hole' || ref.kind === 'black-hole';
+      // The black-hole dataset keeps legacy strings for simple consumers, but
+      // this panel reads its structured quantities so uncertainty/provenance
+      // are never flattened or lost.
+      const info = isBlackHole ? blackHoleInfo(ref) : (ref.info || {});
       for (const [k, v] of Object.entries(info)) {
         const row = document.createElement('div'); row.className = 'info-row';
         const a = document.createElement('span'); a.className = 'k'; a.textContent = k;
-        const b = document.createElement('span'); b.className = 'v'; b.textContent = v;
+        const b = document.createElement('span'); b.className = 'v';
+        const parts = infoValueParts(v);
+        const valueText = document.createElement('span'); valueText.textContent = parts.text;
+        b.appendChild(valueText);
+        appendProvenanceBadge(b, parts.provenance);
         row.append(a, b); table.appendChild(row);
       }
 
@@ -249,6 +454,7 @@ export function initUI(controller) {
         const li = document.createElement('li'); li.textContent = f; facts.appendChild(li);
       });
       $('info-facts-wrap').style.display = (ref.facts && ref.facts.length) ? '' : 'none';
+      renderSources(ref);
 
       // Selecting a body always reveals its full details (expand if collapsed).
       const panel = $('info-panel');

@@ -14,7 +14,9 @@ import { buildSolarSystem } from './bodies.js';
 import { daysSinceJ2000, j2000DaysToDate, voyagerState } from './kepler.js';
 import { initUI } from './ui.js';
 import { createEclipse } from './eclipse.js';
-import { SUN, PLANETS, MOONS, VOYAGERS } from './data.js';
+import { createBlackHoleView } from './blackhole.js';
+import { equatorialToSceneDirection, interstellarScenePosition } from './blackhole-physics.js';
+import { SUN, PLANETS, MOONS, VOYAGERS, BLACK_HOLES, CONFIG } from './data.js';
 import { t, applyBodyTranslations, applyStaticTranslations, MONTHS } from './i18n.js';
 
 // ---------------------------------------------------------------------------
@@ -103,6 +105,7 @@ const state = {
   showMoons: true,
   showDwarfs: true,
   showSpacecraft: true,
+  showBlackHoles: true,
   distanceMode: 'visual',
   bloom: true,
   selected: null,      // { kind, ref, object3D }
@@ -114,7 +117,7 @@ const state = {
 // ---------------------------------------------------------------------------
 // Overlay Vietnamese onto the dataset (if selected) BEFORE building, so labels,
 // the navigator and the info panel all pick up the translated names/text.
-applyBodyTranslations(SUN, PLANETS, MOONS, VOYAGERS);
+applyBodyTranslations(SUN, PLANETS, MOONS, VOYAGERS, BLACK_HOLES);
 const system = buildSolarSystem(systemRoot, loader, onPick, state.distanceMode, TEX_RES);
 
 // ---------------------------------------------------------------------------
@@ -194,7 +197,7 @@ renderer.domElement.addEventListener('dblclick', (e) => {
 });
 
 function clickSelect(cx, cy, focus = false) {
-  if (eclipse.isActive()) return;
+  if (eclipse.isActive() || blackHole.isActive()) return;
   pointer.x = (cx / window.innerWidth) * 2 - 1;
   pointer.y = -(cy / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
@@ -239,6 +242,22 @@ function onPick(userData, object3D, focus = false) {
   // A single click only inspects a body — it must not stay in follow mode. If we
   // were following another body, leave follow so the UI reflects "not following".
   else if (state.following) stopFollow();
+}
+
+function blackHoleById(id) {
+  return BLACK_HOLES.find((body) => body.id === id) || null;
+}
+
+// Gaia BH1's physical geometry is far below one pixel from the Solar System, so
+// selection uses a screen proxy. Focusing navigates to its real Float64 logical
+// anchor; no fabricated nearby distance is introduced.
+function selectBlackHole(data, focus = false) {
+  if (!data) return;
+  state.selected = { kind: 'black-hole', ref: data, object3D: null };
+  ui.showInfo(data, 'black-hole');
+  ui.highlight(data.id);
+  if (state.following) stopFollow();
+  if (focus) enterBlackHoleView(data);
 }
 
 // ---------------------------------------------------------------------------
@@ -401,7 +420,7 @@ function setOrreryVisible(v) {
 let orbitsBeforeAccurate = true;   // remember the Orbit-paths toggle across Accurate mode
 const controller = {
   state,
-  bodies: { sun: SUN, planets: PLANETS, moons: MOONS, voyagers: VOYAGERS },
+  bodies: { sun: SUN, planets: PLANETS, moons: MOONS, voyagers: VOYAGERS, blackHoles: BLACK_HOLES },
   togglePause(p) { state.paused = p; },
   setSpeed(v) { state.speed = v; },
   setDirection(d) { state.direction = d; },
@@ -461,16 +480,25 @@ const controller = {
   },
   setBloom(on) { state.bloom = on; },
   selectById(id) {
+    const blackHoleData = blackHoleById(id);
+    if (blackHoleData) { selectBlackHole(blackHoleData, false); return; }
     const obj = findObjectById(id);
     if (obj) onPick(obj.userData, obj, false);
   },
   focusById(id) {
+    const blackHoleData = blackHoleById(id);
+    if (blackHoleData) { selectBlackHole(blackHoleData, true); return; }
     const obj = findObjectById(id);
     if (obj) onPick(obj.userData, obj, true);
   },
-  focusSelected() { if (state.selected) focusOn(state.selected.object3D); },
+  focusSelected() {
+    if (!state.selected) return;
+    if (state.selected.kind === 'black-hole') enterBlackHoleView(state.selected.ref);
+    else focusOn(state.selected.object3D);
+  },
   stopFollow,
   resetView() {
+    if (blackHole.isActive()) { blackHole.resetView(); return; }
     focusAnim.active = false;
     systemRoot.position.set(0, 0, 0);
     setDefaultCameraLimits();
@@ -513,6 +541,179 @@ const eclipse = createEclipse({
   onExit: () => { setOrreryVisible(true); },
 });
 
+const blackHoleData = BLACK_HOLES[0];
+const blackHoleLogical = interstellarScenePosition(blackHoleData, CONFIG.DIST_REAL_K);
+const blackHoleAbsolute = new THREE.Vector3(...blackHoleLogical.positionScene);
+const blackHoleRenderAnchor = blackHoleAbsolute.clone();
+const blackHoleDistanceLabel = Number.isFinite(blackHoleLogical.distanceUncertaintyPc)
+  ? `${blackHoleLogical.distancePc.toFixed(2)} ± ${blackHoleLogical.distanceUncertaintyPc.toFixed(2)} pc · ${t('evidenceDerived')}`
+  : `${blackHoleLogical.distancePc.toFixed(2)} pc · ${t('evidenceDerived')}`;
+
+const interstellarTravel = {
+  active: false,
+  startedAt: 0,
+  durationMs: 5200,
+  worldOrigin: new THREE.Vector3(),
+  cameraStart: new THREE.Vector3(),
+  cameraEnd: new THREE.Vector3(),
+};
+
+const blackHole = createBlackHoleView({
+  renderer, scene, camera, controls, loader,
+  data: blackHoleData,
+  sceneUnitsPerAU: CONFIG.DIST_REAL_K,
+  logicalPosition: blackHoleLogical,
+  getSimDays: () => state.simDays,
+  tr: t,
+  onEnter: () => { stopFollow(); },
+  onExit: () => {
+    interstellarTravel.active = false;
+    interstellarTravel.worldOrigin.set(0, 0, 0);
+    document.body.classList.remove('black-hole-traveling');
+    interstellarTravelOverlay.hidden = true;
+    systemRoot.position.set(0, 0, 0);
+    blackHole.setRenderAnchor(blackHoleAbsolute);
+    setOrreryVisible(true);
+  },
+});
+
+const interstellarTravelOverlay = document.createElement('section');
+interstellarTravelOverlay.className = 'bh-travel';
+interstellarTravelOverlay.hidden = true;
+interstellarTravelOverlay.setAttribute('aria-live', 'polite');
+interstellarTravelOverlay.innerHTML = `
+  <strong>${t('bhTravelTitle')}</strong>
+  <div class="bh-travel-row"><span>${t('bhTravelNominal')}</span><output id="bh-travel-nominal"></output></div>
+  <div class="bh-travel-row"><span>${t('bhTravelRemaining')}</span><output id="bh-travel-remaining"></output></div>
+  <div class="bh-travel-track" aria-hidden="true"><i id="bh-travel-progress"></i></div>
+  <small>${t('bhTravelNote')}</small>
+`;
+document.body.appendChild(interstellarTravelOverlay);
+const travelNominalOutput = interstellarTravelOverlay.querySelector('#bh-travel-nominal');
+const travelRemainingOutput = interstellarTravelOverlay.querySelector('#bh-travel-remaining');
+const travelProgress = interstellarTravelOverlay.querySelector('#bh-travel-progress');
+travelNominalOutput.textContent = blackHoleDistanceLabel;
+
+function formatInterstellarDistance(sceneDistance) {
+  const au = Math.max(0, sceneDistance) / CONFIG.DIST_REAL_K;
+  const auPerParsec = blackHoleLogical.distanceAU / blackHoleLogical.distancePc;
+  const parsec = au / auPerParsec;
+  if (parsec >= 0.01) return `${parsec.toFixed(parsec >= 100 ? 1 : 2)} pc`;
+  if (au >= 0.01) return `${au.toLocaleString(undefined, { maximumFractionDigits: 2 })} AU`;
+  return `${(au * CONFIG.KM_PER_AU).toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
+}
+
+function updateTravelOverlay(remainingSceneDistance, animationProgress) {
+  travelRemainingOutput.textContent = formatInterstellarDistance(remainingSceneDistance);
+  travelProgress.style.width = `${Math.max(0, Math.min(1, animationProgress)) * 100}%`;
+}
+
+// Move the render origin, not kilometre/AU-scale objects, across the interstellar
+// baseline. The catalogue coordinate remains Float64 logical state; only the
+// small difference `object - worldOrigin` is uploaded to GPU matrices near BH1.
+function beginInterstellarTravel() {
+  interstellarTravel.active = true;
+  interstellarTravel.startedAt = performance.now();
+  interstellarTravel.worldOrigin.set(0, 0, 0);
+  interstellarTravel.cameraStart.copy(camera.position);
+  blackHole.getOverviewCameraOffset(interstellarTravel.cameraEnd);
+  systemRoot.position.set(0, 0, 0);
+  blackHoleRenderAnchor.copy(blackHoleAbsolute);
+  blackHole.setRenderAnchor(blackHoleRenderAnchor);
+  document.body.classList.add('black-hole-traveling');
+  interstellarTravelOverlay.hidden = false;
+  updateTravelOverlay(blackHoleLogical.distanceSceneUnits, 0);
+
+  controls.enabled = false;
+  controls.target.copy(blackHoleRenderAnchor);
+  camera.far = blackHoleLogical.distanceSceneUnits * 1.05;
+  camera.updateProjectionMatrix();
+  camera.lookAt(controls.target);
+}
+
+function finishInterstellarTravel() {
+  interstellarTravel.active = false;
+  interstellarTravel.worldOrigin.copy(blackHoleAbsolute);
+  systemRoot.position.copy(blackHoleAbsolute).multiplyScalar(-1);
+  blackHoleRenderAnchor.set(0, 0, 0);
+  blackHole.setRenderAnchor(blackHoleRenderAnchor);
+  blackHole.resetView();
+  document.body.classList.remove('black-hole-traveling');
+  interstellarTravelOverlay.hidden = true;
+}
+
+function updateInterstellarTravel() {
+  if (!interstellarTravel.active) return;
+  // A close-up selection is an explicit request to arrive immediately; its
+  // observer is then placed at the physical 30 GM/c^2 radius by blackhole.js.
+  if (blackHole.getMode() !== 'overview') {
+    finishInterstellarTravel();
+    return;
+  }
+
+  const linear = Math.min(1,
+    (performance.now() - interstellarTravel.startedAt) / interstellarTravel.durationMs);
+  const eased = linear < 0.5
+    ? 2 * linear * linear
+    : 1 - Math.pow(-2 * linear + 2, 2) / 2;
+
+  // Traverse equal logarithmic distance decades for most of the animation, then
+  // close the last true-scale AU smoothly. This is camera motion through the
+  // measured baseline, not a shortening of that baseline.
+  const arrivalFraction = 0.94;
+  let remainingFraction;
+  if (eased < arrivalFraction) {
+    const decadeProgress = eased / arrivalFraction;
+    remainingFraction = Math.exp(Math.log(1e-8) * decadeProgress);
+  } else {
+    const finalProgress = (eased - arrivalFraction) / (1 - arrivalFraction);
+    remainingFraction = 1e-8 * (1 - finalProgress) ** 2;
+  }
+
+  // Compute the small near-target remainder directly. Deriving it by
+  // subtracting two ~10^12-unit vectors would reintroduce cancellation just
+  // where the binary's kilometre/AU detail matters most.
+  blackHoleRenderAnchor.copy(blackHoleAbsolute).multiplyScalar(remainingFraction);
+  interstellarTravel.worldOrigin.copy(blackHoleAbsolute).sub(blackHoleRenderAnchor);
+  systemRoot.position.copy(interstellarTravel.worldOrigin).multiplyScalar(-1);
+  blackHole.setRenderAnchor(blackHoleRenderAnchor);
+
+  camera.position.lerpVectors(
+    interstellarTravel.cameraStart,
+    interstellarTravel.cameraEnd,
+    eased,
+  );
+  controls.target.copy(blackHoleRenderAnchor);
+  camera.lookAt(controls.target);
+
+  const solarDistance = interstellarTravel.worldOrigin.length();
+  const targetDistance = blackHoleRenderAnchor.length();
+  updateTravelOverlay(targetDistance, linear);
+  camera.far = Math.max(CONFIG.DIST_REAL_K * 50, solarDistance, targetDistance) * 1.05;
+  camera.updateProjectionMatrix();
+
+  if (linear >= 1) finishInterstellarTravel();
+}
+
+function enterBlackHoleView(data = blackHoleData) {
+  if (!data || data.id !== blackHoleData?.id) return;
+  if (eclipse.isActive()) eclipse.exit();
+  // Interstellar placement only has a meaningful common ruler in true-scale
+  // mode. The selector is synchronized because this is an explicit mode change.
+  if (state.distanceMode !== 'realistic') {
+    controller.setDistanceMode('realistic');
+    const distanceSelect = document.getElementById('dist-mode');
+    if (distanceSelect) distanceSelect.value = 'realistic';
+  }
+  blackHole.enter('overview', { deferCamera: true });
+  beginInterstellarTravel();
+}
+
+function enterEclipse(kind) {
+  if (blackHole.isActive()) blackHole.exit();
+  eclipse.enter(kind);
+}
+
 const eclBtn = document.getElementById('btn-eclipse');
 const eclMenu = document.getElementById('eclipse-menu');
 eclBtn.addEventListener('click', (e) => {
@@ -520,13 +721,57 @@ eclBtn.addEventListener('click', (e) => {
   eclMenu.classList.toggle('hidden');
   eclBtn.classList.toggle('active', !eclMenu.classList.contains('hidden'));
 });
-document.getElementById('ecl-go-solar').addEventListener('click', () => { eclMenu.classList.add('hidden'); eclBtn.classList.remove('active'); eclipse.enter('solar'); });
-document.getElementById('ecl-go-lunar').addEventListener('click', () => { eclMenu.classList.add('hidden'); eclBtn.classList.remove('active'); eclipse.enter('lunar'); });
+document.getElementById('ecl-go-solar').addEventListener('click', () => { eclMenu.classList.add('hidden'); eclBtn.classList.remove('active'); enterEclipse('solar'); });
+document.getElementById('ecl-go-lunar').addEventListener('click', () => { eclMenu.classList.add('hidden'); eclBtn.classList.remove('active'); enterEclipse('lunar'); });
 document.addEventListener('pointerdown', (e) => {
   if (!eclMenu.classList.contains('hidden') && !eclMenu.contains(e.target) && e.target !== eclBtn) {
     eclMenu.classList.add('hidden'); eclBtn.classList.remove('active');
   }
 }, true);
+
+// Distant-object locator for the actual Float64 catalogue position. At Solar-
+// System scale its 3D geometry is necessarily sub-pixel, so this projected
+// marker remains clickable; focus starts the floating-origin journey to it.
+const coordValue = (quantity) => (typeof quantity === 'number' ? quantity : quantity?.value);
+const locatorDirectionData = equatorialToSceneDirection(
+  coordValue(blackHoleData.coordinates.raDeg),
+  coordValue(blackHoleData.coordinates.decDeg),
+);
+const locatorDirection = new THREE.Vector3(
+  locatorDirectionData.x, locatorDirectionData.y, locatorDirectionData.z,
+);
+const locatorWorld = new THREE.Vector3();
+const locatorForward = new THREE.Vector3();
+const blackHoleLocator = document.createElement('button');
+blackHoleLocator.type = 'button';
+blackHoleLocator.className = 'bh-orrery-locator';
+blackHoleLocator.dataset.id = blackHoleData.id;
+blackHoleLocator.setAttribute('aria-label', `${blackHoleData.name} — ${blackHoleDistanceLabel}`);
+blackHoleLocator.innerHTML = `<span class="bh-locator-mark" aria-hidden="true">◎</span><span><b>${blackHoleData.name}</b><small>${blackHoleDistanceLabel}</small></span>`;
+let locatorLastDown = -Infinity;
+blackHoleLocator.addEventListener('pointerdown', (event) => {
+  event.stopPropagation();
+  const now = performance.now();
+  const focus = now - locatorLastDown < 350;
+  locatorLastDown = focus ? -Infinity : now;
+  selectBlackHole(blackHoleData, focus);
+});
+document.body.appendChild(blackHoleLocator);
+
+function updateBlackHoleLocator() {
+  const modeHidden = eclipse.isActive() || blackHole.isActive()
+    || !state.showLabels || !state.showBlackHoles;
+  camera.getWorldDirection(locatorForward);
+  const facesCamera = locatorForward.dot(locatorDirection) > 0;
+  locatorWorld.copy(camera.position).addScaledVector(locatorDirection, 1.0e6).project(camera);
+  const inFrame = Math.abs(locatorWorld.x) <= 1.04 && Math.abs(locatorWorld.y) <= 1.04
+    && locatorWorld.z >= -1 && locatorWorld.z <= 1;
+  const visible = !modeHidden && facesCamera && inFrame;
+  blackHoleLocator.style.display = visible ? '' : 'none';
+  if (!visible) return;
+  blackHoleLocator.style.left = `${(locatorWorld.x * 0.5 + 0.5) * window.innerWidth}px`;
+  blackHoleLocator.style.top = `${(-locatorWorld.y * 0.5 + 0.5) * window.innerHeight}px`;
+}
 
 // ---------------------------------------------------------------------------
 //  Resize
@@ -539,6 +784,7 @@ window.addEventListener('resize', () => {
   finalComposer.setSize(w, h);
   labelRenderer.setSize(w, h);
   bloomPass.resolution.set(w, h);
+  blackHole.resize(w, h);
 });
 
 // ---------------------------------------------------------------------------
@@ -558,11 +804,14 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.code === 'Escape') {
-    if (eclipse.isActive()) eclipse.exit(); else stopFollow();
+    if (blackHole.isActive()) blackHole.exit();
+    else if (eclipse.isActive()) eclipse.exit();
+    else stopFollow();
     return;
   }
   if (MOVE_KEYS.has(e.code)) {
     e.preventDefault();
+    if (blackHole.isActive()) return;
     pressed.add(e.code);
     if (state.following) stopFollow();   // manual control takes over from follow
   }
@@ -597,7 +846,16 @@ function applyKeyboardMove(dt) {
 //  Animation loop
 // ---------------------------------------------------------------------------
 // Debug / power-user hook: inspect from the browser console (e.g. SOLAR.state).
-window.SOLAR = { THREE, scene, systemRoot, camera, controls, system, state, controller, eclipse };
+window.SOLAR = {
+  THREE, scene, systemRoot, camera, controls, system, state, controller,
+  eclipse, blackHole,
+  gaiaBh1: {
+    logical: blackHoleLogical,
+    absoluteScenePosition: blackHoleAbsolute,
+    renderOrigin: interstellarTravel.worldOrigin,
+    travel: interstellarTravel,
+  },
+};
 
 const clock = new THREE.Clock();
 let frames = 0, fpsT = 0;
@@ -606,10 +864,37 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
 
-  applyKeyboardMove(dt);   // WASD / arrow-key fly-through (works in both modes)
+  // Gaia BH1 owns the frame while active. During transit the Solar System and
+  // binary retain their true Float64 separation while a floating render origin
+  // follows the camera; the shared date controls still drive observed phase.
+  if (blackHole.isActive()) {
+    if (!state.paused) state.simDays += dt * state.speed * state.direction;
+    if (interstellarTravel.active) system.update(state.simDays);
+    updateInterstellarTravel();
+    updateBlackHoleLocator();
+    // The local binary overview reuses the inertial backdrop. Keep its shells
+    // centred even if the Solar-System root had previously been rebased around
+    // Voyager or displaced by Accurate-mode galactic drift.
+    system.sky.position.copy(camera.position).sub(systemRoot.position);
+    system.stars.position.copy(camera.position).sub(systemRoot.position);
+    blackHole.update(dt, state.simDays);
+    frames++; fpsT += dt;
+    if (fpsT >= 0.25) {
+      ui.setHUD({
+        date: j2000DaysToDate(state.simDays),
+        fps: Math.round(frames / fpsT),
+        following: '',
+      });
+      frames = 0; fpsT = 0;
+    }
+    return;
+  }
+
+  applyKeyboardMove(dt);   // WASD / arrow-key fly-through in the orrery
 
   // Eclipse mode runs its own simulation; the orrery is hidden.
   if (eclipse.isActive()) {
+    updateBlackHoleLocator();
     eclipse.update(dt);
     controls.update();
     system.sky.position.copy(camera.position).sub(systemRoot.position);
@@ -653,6 +938,7 @@ function animate() {
   }
 
   controls.update();
+  updateBlackHoleLocator();
   system.orientVoyagers();   // physical mesh scale is fixed; only aim its dish
   // Backdrop objects are children of the movable system root, so express the
   // camera position in that root's local coordinates.

@@ -4,6 +4,32 @@
 //  and info-keys are handled in i18n.js.
 // ============================================================================
 export const BODIES_VI = {
+  "gaia-bh1": {
+    "type": "Hệ đôi chứa hố đen đang ngủ",
+    "description": "Gaia BH1 là một hệ sao đôi cách Hệ Mặt Trời khoảng 478 parsec (xấp xỉ 1.560 năm ánh sáng), chứa ít nhất một hố đen khối lượng sao và một ngôi sao giống Mặt Trời. Hố đen được nhận ra từ chuyển động quỹ đạo của sao đồng hành, chứ không phải từ ánh sáng của chính nó; chưa phát hiện phát xạ do bồi tụ trong hệ này.",
+    "facts": [
+      "Gaia BH1 là hệ chứa hố đen đã biết gần Hệ Mặt Trời nhất khi được công bố và xác nhận bằng quỹ đạo thiên văn cùng vận tốc xuyên tâm.",
+      "Locator trên màn hình giữ đúng hướng ICRS; neo 3D logic nằm ở khoảng cách danh định suy ra từ thị sai, trên cùng thước AU thật nhờ floating origin.",
+      "Tổng quan hệ đôi dùng chung một thước đo thật cho bán kính sao, khoảng cách quỹ đạo và chân trời sự kiện; dấu chữ thập giúp nhận ra vị trí hố đen khi chân trời nhỏ hơn một pixel.",
+      "Chưa đo được spin của Gaia BH1. Góc nhìn cận cảnh dùng metric Schwarzschild với a*=0 như một giả định mô hình tối thiểu.",
+      "Cận cảnh giả định thành phần tối là một vật thể đặc 9,27 M☉; nghiệm hai vật thể được ưu tiên nhưng chưa loại trừ hoàn toàn một cặp BH+BH rất sít với P_inner ≲ 1,5 ngày.",
+      "Không có đĩa bồi tụ, jet hay vòng sáng tự phát được thêm vào; các vùng sáng chỉ đến từ bầu trời tham chiếu hoặc sao đồng hành bị thấu kính hấp dẫn."
+    ],
+    "info": {
+      "Status": "Hệ đang ngủ chứa ít nhất một hố đen",
+      "Gaia DR3 source": "4373465352415301632",
+      "Direction (ICRS, J2016.0)": "RA 262,17120816°, Dec −0,58109202°",
+      "Parallax": "2,09 ± 0,02 mas (đo được)",
+      "Distance": "xấp xỉ 478 pc (xấp xỉ 1.560 năm ánh sáng; suy ra từ thị sai)",
+      "Black-hole mass": "9,27 ± 0,10 M☉ (fit động lực học)",
+      "Companion": "Sao loại G giống Mặt Trời; 0,93 ± 0,05 M☉",
+      "Orbital period": "185,387 ± 0,003 ngày",
+      "Eccentricity": "0,43230 ± 0,00002",
+      "Spin": "Chưa đo được; cận cảnh dùng mô hình Schwarzschild không quay",
+      "Accretion": "Chưa phát hiện phát xạ bồi tụ sáng",
+      "Orrery locator": "Proxy trên màn hình; neo 3D logic dùng khoảng cách thị sai danh định"
+    }
+  },
   "voyager1": {
     "description": "Voyager 1 của NASA là vật thể do con người chế tạo ở xa nhất từng được tạo ra. Được phóng ngày 5 tháng 9 năm 1977, nó đã bay ngang Sao Mộc (1979) và Sao Thổ (1980) — lần tiếp cận gần vệ tinh Titan của Sao Thổ đã hất nó lên cao và ra khỏi mặt phẳng hành tinh. Tháng 8 năm 2012, nó vượt qua nhật mãn (heliopause), trở thành tàu vũ trụ đầu tiên tiến vào không gian liên sao. Nó vẫn đang được theo dõi và vẫn gửi dữ liệu về từ khoảng cách hơn một ngày-ánh-sáng.",
     "facts": [

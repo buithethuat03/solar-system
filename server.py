@@ -24,6 +24,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return "text/css"
         if p.endswith(".json"):
             return "application/json"
+        if p.endswith(".bin"):
+            return "application/octet-stream"
         return super().guess_type(path)
 
     def end_headers(self):

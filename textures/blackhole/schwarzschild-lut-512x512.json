@@ -1,0 +1,167 @@
+{
+  "format": "RG32F little-endian, tightly packed, row-major",
+  "width": 512,
+  "height": 512,
+  "raySampleCoordinate": {
+    "min": 0.000001,
+    "max": 1,
+    "axis": "x",
+    "texels": "cell-centred",
+    "angleMapping": "alpha = alpha_shadow(r_O) + (pi/2 - alpha_shadow(r_O)) * s^2",
+    "lookupMapping": {
+      "continuity": "C1 at sSplit",
+      "qSplit": 0.4953878872746471,
+      "sMin": 0.000001,
+      "sSplit": 0.08,
+      "nearCritical": "q = qSplit * log(s/sMin) / log(sSplit/sMin)",
+      "broadField": "q = qSplit + (1-qSplit) * (s-sSplit) / (1-sSplit)"
+    }
+  },
+  "observerRadiusOverM": {
+    "min": 6,
+    "max": 100,
+    "axis": "y",
+    "spacing": "linear cell-centred"
+  },
+  "channels": {
+    "r": "total escaping azimuth Phi (radians)",
+    "g": "escape mask (0 or 1)"
+  },
+  "metric": "Schwarzschild; geometric units G=c=M=1",
+  "criticalImpactParameterOverM": 5.196152422706632,
+  "integrator": "endpoint-regularized 192-point Gauss-Legendre",
+  "generator": "tools/generate_blackhole_lut.mjs",
+  "validation": {
+    "shadowAngleDeg": 9.632732282697253,
+    "flatIdentityError": 1.5700924586837752e-16,
+    "lookupJoin": {
+      "continuityClass": "C1",
+      "lookupCoordinate": 0.4953878872746471,
+      "sampleCoordinate": 0.08,
+      "sampleValueAbsError": 6.938893903907228e-17,
+      "dsDqNear": 1.8231825530924812,
+      "dsDqBroad": 1.8231825530924817,
+      "dsDqAbsError": 4.440892098500626e-16,
+      "dqDsNear": 0.5484914268753837,
+      "dqDsBroad": 0.5484914268753835,
+      "dqDsAbsError": 1.1102230246251565e-16
+    },
+    "referenceIntegrator": "endpoint-regularized 384-point Gauss-Legendre",
+    "interpolationChecksAtROverM30": [
+      {
+        "s": 0.002,
+        "region": "near-critical",
+        "alphaDeg": 9.633053751768124,
+        "reference": 12.884713880354354,
+        "lookup": 12.884716649495392,
+        "absError": 0.000002769141037362033
+      },
+      {
+        "s": 0.005,
+        "region": "visible-critical-curve",
+        "alphaDeg": 9.634741464390187,
+        "reference": 11.052705172880167,
+        "lookup": 11.052708072281952,
+        "absError": 0.000002899401785327882
+      },
+      {
+        "s": 0.01,
+        "region": "visible-critical-curve",
+        "alphaDeg": 9.640769009468983,
+        "reference": 9.668197623177953,
+        "lookup": 9.668202722996902,
+        "absError": 0.000005099818949361179
+      },
+      {
+        "s": 0.02,
+        "region": "visible-critical-curve",
+        "alphaDeg": 9.664879189784173,
+        "reference": 8.288088160072892,
+        "lookup": 8.288090983893408,
+        "absError": 0.000002823820516084652
+      },
+      {
+        "s": 0.04,
+        "region": "visible-critical-curve",
+        "alphaDeg": 9.761319911044936,
+        "reference": 6.922613633616116,
+        "lookup": 6.9226375986881,
+        "absError": 0.00002396507198376696
+      },
+      {
+        "s": 0.079,
+        "region": "join-left",
+        "alphaDeg": 10.13430440052094,
+        "reference": 5.626246020696942,
+        "lookup": 5.626278407924095,
+        "absError": 0.00003238722715259712
+      },
+      {
+        "s": 0.08,
+        "region": "join",
+        "alphaDeg": 10.147082796087991,
+        "reference": 5.603080834989406,
+        "lookup": 5.603295512504826,
+        "absError": 0.0002146775154203695
+      },
+      {
+        "s": 0.081,
+        "region": "join-right",
+        "alphaDeg": 10.160021926190476,
+        "reference": 5.5802422648100265,
+        "lookup": 5.580714653361361,
+        "absError": 0.00047238855133446833
+      },
+      {
+        "s": 0.1,
+        "region": "broad-field",
+        "alphaDeg": 10.43640495987028,
+        "reference": 5.199388901971837,
+        "lookup": 5.199642122809284,
+        "absError": 0.0002532208374477207
+      },
+      {
+        "s": 0.35,
+        "region": "broad-field",
+        "alphaDeg": 19.47772257806684,
+        "reference": 3.3495692464064266,
+        "lookup": 3.3495735096819974,
+        "absError": 0.000004263275570792757
+      },
+      {
+        "s": 0.8,
+        "region": "broad-field",
+        "alphaDeg": 61.06778362177102,
+        "reference": 2.1997341243534803,
+        "lookup": 2.1997320737092174,
+        "absError": 0.0000020506442628409616
+      }
+    ],
+    "maxInterpolationAbsErrorRad": 0.00047238855133446833,
+    "grid": {
+      "scalarCount": 524288,
+      "byteLength": 2097152,
+      "escapingTexels": 262144,
+      "nonFiniteScalars": 0,
+      "invalidEscapeMasks": 0,
+      "phiRangeRad": {
+        "min": 1.5967299938201904,
+        "max": 29.56791114807129
+      },
+      "texelCentres": {
+        "lookupCoordinate": {
+          "first": 0.0009765625,
+          "last": 0.9990234375
+        },
+        "sampleCoordinate": {
+          "first": 0.0000010225051508211762,
+          "last": 0.9982195482879955
+        },
+        "observerRadiusOverM": {
+          "first": 6.091796875,
+          "last": 99.908203125
+        }
+      }
+    }
+  }
+}

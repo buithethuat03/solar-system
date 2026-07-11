@@ -3,7 +3,9 @@
 An interactive, scientifically grounded Solar System visualization built with
 [three.js](https://threejs.org). Choose a date, explore planets and moons, compare
 compressed and true-scale views, follow Voyager 1 and 2, or step through solar
-and lunar eclipse visualizations.
+and lunar eclipse visualizations. A dedicated Gaia BH1 mode also explores the
+nearest known black-hole system with a provenance-labelled binary model and
+Schwarzschild light bending.
 
 [Live demo](https://buithethuat03.github.io/solar-system/) ·
 [Web Usage Guide](docs/web-usage.md)
@@ -27,6 +29,12 @@ and lunar eclipse visualizations.
   simplified circular paths with Keplerian periods.
 - **Voyager 1 and 2 trajectories** from embedded NASA/JPL HORIZONS heliocentric
   state vectors, with date-aware distance, one-way light-time, and speed data.
+- **Gaia BH1 in the same logical 3D space**: its Float64 anchor is derived from
+  ICRS direction and parallax on the true Solar-System AU ruler. A floating
+  origin lets the camera navigate the nominal 478 pc baseline without moving
+  the system closer or losing the local binary's kilometre-scale precision.
+  The Schwarzschild close-up adds curved-spacetime ray tracing, with no invented
+  accretion disk or jet for this dormant system.
 - **Time travel controls** from real time to about ten simulated years per
   second, including reverse playback, presets, UTC date selection, and Now.
 - **Three distance views**: an approachable compressed overview and two views
@@ -61,7 +69,9 @@ prevents the browser from loading its modules and assets correctly.
 
 ### Requirements
 
-- A modern browser with WebGL and ES-module/import-map support.
+- A modern browser with WebGL and ES-module/import-map support. The interactive
+  Gaia BH1 close-up uses WebGL2; unsupported devices receive a clearly labelled
+  static fallback generated from the same lensing model.
 - Python 3 only if you use the included local server. Any correctly configured
   static HTTP server can host the project.
 
@@ -84,8 +94,9 @@ manager is required.
 | Reset the camera | **Reset view** |
 
 Keyboard flight speed adapts to the current zoom level. Manual flight stops an
-active follow. In an eclipse view, `Space` controls the eclipse timeline and
-`Esc` returns to the orrery.
+active follow. In an eclipse view, `Space` controls the eclipse timeline; Gaia
+BH1 keeps the main UTC time controls for its observed orbital phase. `Esc`
+returns to the orrery from either special view.
 
 ## Distance views
 
@@ -113,6 +124,8 @@ js/kepler.js            Planet solver, distance mapping, and Voyager interpolati
 js/voyager_ephem.js     Generated embedded NASA/JPL HORIZONS state-vector samples
 js/ui.js                Navigator, time controls, view settings, and info panel
 js/eclipse.js           Solar/lunar eclipse teaching rigs and POV rendering
+js/blackhole.js         Gaia BH1 overview, close-up renderer, and special-mode lifecycle
+js/blackhole-physics.js Coordinate, binary-orbit, and Schwarzschild calculations
 js/i18n*.js             English/Vietnamese interface and body translations
 js/fullscreen.js        Browser fullscreen/UI synchronization
 lib/                    Local three.js r160 module and required addons
@@ -139,8 +152,66 @@ tools/                  Voyager ephemeris generator and focused Node checks
   inspect them far from the Sun.
 - Eclipse modes are explanatory simulations with didactic scale and geometry,
   not predictions tied to the selected calendar date.
+- Gaia BH1's logical 3D anchor uses its measured ICRS direction (J2016.0) and
+  the nominal reciprocal-parallax distance, `478.47 ± 4.58 pc`. The selectable
+  screen locator is only a proxy for that necessarily sub-pixel target. During
+  navigation, the app shifts a Float64 render origin instead of uploading the
+  full ~`3.71 × 10^12`-unit coordinate to the Float32 GPU. Its binary phase
+  follows the observed ephemeris received in the Solar System; it is not a
+  claim of a simultaneous “now” at Gaia BH1.
+- The Gaia BH1 close-up uses the Schwarzschild metric because its spin has not
+  been measured. Setting `a*=0` is an explicit model assumption, not a claim
+  that the real object has zero spin. It also treats the dark component as one
+  compact object; the favored two-body fit does not completely exclude a tight
+  inner BH+BH pair with `P_inner ≲ 1.5 days`. The close observer is hypothetical
+  and must use thrust to remain static.
 - A logarithmic depth buffer supports the enormous range from close-up moons and
   metre-scale spacecraft to distant dwarf planets.
+
+## Gaia BH1: what is measured and what is modeled
+
+Choose **Gaia BH1** under **Black holes** in Explore. The app first switches to
+the Realistic ruler, then moves the camera from the Solar System to the real
+logical 3D anchor derived from RA/Dec and parallax. The 5.2-second navigation
+accelerates the camera logarithmically; it is explicitly not a spacecraft-speed
+or physical elapsed-time simulation. At every frame the Solar System and Gaia
+BH1 retain their true nominal separation, while a floating origin keeps the
+nearby object coordinates numerically stable.
+
+The binary overview is a physical-scale diagram of the observational evidence:
+the luminous G-type companion and the dark component orbit their common
+barycentre. Labels, two barycentric orbit paths, and a live AU ruler make the
+mass ratio and selected ephemeris phase readable. The star radius, orbit, and
+event-horizon mesh share exactly the same ruler. The horizon is not enlarged;
+it is normally sub-pixel, so a separate reticle marks its physical position and
+can be clicked to zoom into the relativistic close-up.
+
+The close-up is an educational view near a non-rotating Schwarzschild model.
+It starts at `rO = 30 GM/c²`, but behaves as a physical orbit camera: wheel or
+pinch dolly changes the static-observer radius across the centre-sampled LUT
+domain (`6.09–99.91 GM/c²`). Distance, `dτ/dt`, and the exact local shadow angle
+update continuously; Reset returns to `30 GM/c²`.
+It assumes the published 9.27 M☉ dynamical mass is one compact object. The
+orbital analysis favors this two-body interpretation, but does not completely exclude
+a very tight inner BH+BH pair (`P_inner ≲ 1.5 days`). The real spin and spin axis
+also remain unknown. The scene labels both the single-object interpretation and
+`a*=0` as model assumptions, while calculated radii and orbital distances are
+derived values. The system has no detected accretion emission, so the
+visualization adds no luminous disk, jet, bloom, or painted photon ring;
+brightness near the critical curve appears only when reference-sky or companion
+light is lensed there.
+
+At Gaia BH1's measured parallax, the model's real shadow diameter as seen from
+Earth is only about 1.99 nanoarcseconds. The close-up is therefore an intentional
+view in units of `GM/c²`, not a claim that an Earth-based camera could resolve it.
+
+The background is an ESA Gaia reference sky as mapped from the Solar System and
+has already been prepared for display. An offline, reproducible conversion turns
+the source Hammer-Aitoff ellipse into a periodic equirectangular texture before
+lensing, preventing its black page boundary from becoming false arcs. This
+supports the lensing geometry, but is not a claim of calibrated photometry or of
+the exact sky an observer physically located at Gaia BH1 would see. All runtime
+data and rendering assets are local; the app makes no live astronomy-data request.
 
 ## A note on scale
 
@@ -162,4 +233,17 @@ gaps. Use the navigator, **Focus & follow**, and keyboard flight to explore.
   vectors embedded in the project.
 - Voyager model: **NASA/VTAD** — [Voyager 3D Model](https://science.nasa.gov/resource/voyager-3d-model/),
   public domain.
+- Gaia BH1 updated orbital constraints:
+  [PASP 2024](https://doi.org/10.1088/1538-3873/ad1ba7); discovery analysis,
+  Gaia astrometry, companion properties, and accretion constraints:
+  [MNRAS 518, 1057](https://academic.oup.com/mnras/article/518/1/1057/6794289).
+- Nominal solar mass parameter used for derived relativistic scales:
+  [IAU 2015 Resolution B3](https://arxiv.org/abs/1510.07674).
+- Reference sky: [ESA, “Gaia's sky in colour”](https://www.esa.int/ESA_Multimedia/Images/2018/04/Gaia_s_sky_in_colour2),
+  credited to ESA/Gaia/DPAC; used as a display-mapped geometric background, not
+  as calibrated photometry at Gaia BH1.
+- Schwarzschild beam-tracing method based on
+  [Eric Bruneton's paper](https://ebruneton.github.io/black_hole_shader/paper.pdf)
+  and [reference implementation](https://github.com/ebruneton/black_hole_shader),
+  licensed under **BSD-3-Clause**; see [third-party notices](THIRD_PARTY_NOTICES.md).
 - Rendering: [three.js](https://threejs.org) r160.

@@ -2,7 +2,7 @@
 
 This guide explains how to navigate the **3D Solar System — Interactive Orrery**,
 control simulation time, compare distance views, inspect the Voyager probes, and
-use the eclipse visualizations.
+use the eclipse and Gaia BH1 visualizations.
 
 [Back to the project README](../README.md)
 
@@ -33,9 +33,9 @@ Sun's info card is shown initially.
 - **Top bar:** live/follow/FPS status, eclipse chooser, View settings, Help, and
   Reset view.
 - **Explore panel:** navigator for the Sun, eight planets, five dwarf planets,
-  seven moons, and—when a true-scale view is active—Voyager 1 and 2.
+  seven moons, Gaia BH1, and—when a true-scale view is active—Voyager 1 and 2.
 - **Info panel:** the selected object's description, physical/orbital values,
-  facts, and Focus & follow control.
+  facts, source links and provenance, and Focus & follow control.
 - **Bottom bar:** play, reverse, Now, the speed slider and presets, the UTC
   simulation clock, and the date picker.
 - **3D viewport:** direct mouse, touch, and keyboard navigation.
@@ -64,7 +64,8 @@ mode. Resetting Accurate mode returns to the drifting Sun framing.
 
 ## Select, inspect, and follow objects
 
-You can interact with the Sun, planets, dwarf planets, moons, and Voyager probes.
+You can interact with the Sun, planets, dwarf planets, moons, Voyager probes,
+and the Gaia BH1 locator.
 
 1. **Single-click a body or label** to inspect it. The info panel opens and
    expands, but the camera does not begin following it.
@@ -87,6 +88,12 @@ The panel contains:
 - physical and orbital values;
 - mission/status values for Voyager; and
 - a **Did you know?** list when facts are available.
+
+Gaia BH1 rows are explicitly marked **Measured**, **Derived**, or **Model
+assumption**. Its source section links the papers behind the values and shows
+the coordinate epoch. These labels matter: a calculated Schwarzschild radius
+is not a separate observation, and the zero-spin close-up is not a spin
+measurement.
 
 Use the chevron in the panel header to collapse or expand the details. Voyager
 distance, light-time, speed, and status are evaluated for the simulated date
@@ -189,6 +196,89 @@ are not fetched from HORIZONS on every visit. The probes are hidden on simulated
 dates before their 1977 launches. Use a post-launch date if a probe does not
 appear.
 
+## Explore Gaia BH1
+
+Choose **Gaia BH1** under **Black holes** in Explore to open a dedicated mode
+with a binary-system overview and a relativistic close-up. In the orrery, a
+single click on its projected direction locator opens the provenance-rich info
+card; a double-click enters the dedicated mode. `Esc` or the exit button returns
+to the orrery and restores its camera and controls.
+
+### True 3D placement, floating origin, and binary overview
+
+The orrery locator follows Gaia BH1's measured ICRS right ascension and
+declination at epoch J2016.0. The marker itself is a selectable screen proxy,
+but the object behind it has a real Float64 logical 3D anchor at the nominal
+distance derived from `2.09 ± 0.02 mas`: `478.47 ± 4.58 pc`. Because this is a
+reciprocal-parallax result, the interface labels it as derived rather than an
+exact distance.
+
+Focusing Gaia BH1 switches the orrery to its Realistic ruler and moves the
+camera along that true interstellar baseline. The animation covers distance
+decades at logarithmically accelerated camera speed, so its 5.2-second duration
+is navigation—not a claim about a spacecraft velocity or travel time. The Solar
+System and Gaia BH1 remain separated by about `98.69 million AU` on the shared
+ruler. A floating render origin follows the camera, keeping coordinates near
+the GPU small enough that the local kilometre/AU geometry is not destroyed by
+Float32 precision.
+
+The binary overview explains the dynamical evidence: the visible G-type star
+and the unseen 9.27 M☉ component follow two paths around their shared
+barycentre. Direct scene labels, a legend, a connecting line, and a live AU
+ruler identify what is being shown. The companion radius, orbital separation,
+and physical event-horizon mesh all use the same scale as the Realistic Solar
+System. The horizon is not enlarged and is normally smaller than a pixel; a
+reticle only helps locate it. Click its label to move to the Schwarzschild
+close-up. The main date/time controls set phase from the ephemeris received in
+the Solar System, not a simultaneous present-day state 478 pc away.
+
+### Schwarzschild close-up
+
+The close-up traces light in the Schwarzschild metric. Gaia BH1's spin and spin
+axis have not been measured, so the interface always identifies `a*=0` as a
+model assumption rather than a property of the real black hole. It also assumes
+the published 9.27 M☉ dynamical mass is one compact object. The favored two-body
+fit does not completely exclude a very tight inner BH+BH pair with
+`P_inner ≲ 1.5 days`; this single-object interpretation is labelled as a second
+model assumption. The default observer is hypothetically held at
+`rO = 30 GM/c²` with a 55° field of view; such a static observer needs continuous
+thrust. Readouts report the distance in kilometres and Schwarzschild radii,
+together with the local proper-time rate. Use the mouse wheel, touchpad, pinch,
+or the observer-radius slider to dolly physically between approximately
+`6.09` and `99.91 GM/c²`, the centre-sampled radius domain of the committed LUT.
+The ray mapping, distance, `dτ/dt`, and shadow angle all update with the camera;
+**Reset view** returns to `30 GM/c²`.
+
+Camera presets change only the hypothetical viewpoint: one aligns with the
+direction from the Solar System, one demonstrates an Einstein-ring alignment,
+and free orbit allows manual inspection. They do not alter the measured binary
+data. The companion is rendered before lensing from its published fitted or
+reported temperature, radius, luminosity, and ephemeris position, so any
+primary/secondary image or Einstein ring comes from the ray mapping rather than
+a decorative overlay.
+
+Gaia BH1 is dormant and has no detected accretion emission. Accordingly, this
+mode contains no luminous accretion disk, jet, black-hole bloom, or fixed photon
+ring. A bright feature near the critical curve appears only where reference-sky
+or companion light is mapped there.
+
+### Reference sky and graphics fallback
+
+The fullscreen lensing pass uses a locally stored ESA Gaia reference sky mapped
+from the Solar System. Before runtime, a committed generator reprojects the
+Hammer-Aitoff ellipse into a periodic equirectangular texture. This removes the
+source JPEG's black padding and map boundary before strong lensing can magnify
+them into false streaks. The image is already display-mapped: it is useful for
+checking lensing geometry, but is not calibrated photometry and is not the exact
+sky a physical observer at Gaia BH1 would see. The app downloads no astronomy
+data at runtime.
+
+Interactive close-up rendering requires WebGL2. Automatic quality changes only
+the render scale (`1.0`, `0.75`, or `0.5`), never the physical ray mapping. If
+the required shader or float texture is unavailable, the mode identifies the
+limitation and shows a static frame generated from the same solver instead of a
+fake radial warp.
+
 ## Explore eclipse modes
 
 Choose **Eclipses** in the top bar, then select **Solar Eclipse** or
@@ -274,7 +364,26 @@ Voyager appears only in Realistic or Accurate mode, with the Spacecraft toggle
 enabled, and on a simulated date after its launch. Its physical scale is tiny,
 so select it from Explore instead of searching visually.
 
+### Gaia BH1 close-up is static
+
+The device may not expose WebGL2 or the required floating-point texture support.
+The labelled fallback preserves the solver's geometry but cannot be explored
+interactively. Update the browser or graphics driver to try the live close-up.
+
 ### The interface disappeared
 
-You may be in fullscreen or eclipse mode. Press `Esc` to leave the active mode
-and restore the normal interface.
+You may be in fullscreen, eclipse mode, or Gaia BH1 mode. Press `Esc` to leave
+the active mode and restore the normal interface.
+
+## Gaia BH1 sources and licenses
+
+- Updated orbital constraints:
+  [PASP 2024](https://doi.org/10.1088/1538-3873/ad1ba7).
+- Discovery analysis, Gaia astrometry, companion properties, and accretion constraints:
+  [MNRAS 518, 1057](https://academic.oup.com/mnras/article/518/1/1057/6794289).
+- Relativistic constants: [IAU 2015 Resolution B3](https://arxiv.org/abs/1510.07674).
+- Reference sky: [ESA, “Gaia's sky in colour”](https://www.esa.int/ESA_Multimedia/Images/2018/04/Gaia_s_sky_in_colour2),
+  credited to ESA/Gaia/DPAC and used with the photometry caveat above.
+- Beam-tracing approach: [Eric Bruneton's paper](https://ebruneton.github.io/black_hole_shader/paper.pdf)
+  and [BSD-3-Clause reference code](https://github.com/ebruneton/black_hole_shader);
+  the upstream license is reproduced in [third-party notices](../THIRD_PARTY_NOTICES.md).

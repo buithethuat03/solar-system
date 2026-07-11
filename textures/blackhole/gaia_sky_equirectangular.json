@@ -1,0 +1,33 @@
+{
+    "projection":  "equirectangular, Galactic coordinates, longitude increases left",
+    "dimensions":  {
+                       "height":  2048,
+                       "width":  4096
+                   },
+    "source":  {
+                   "hammerCropPixelEdges":  {
+                                                "left":  149.5,
+                                                "right":  4149.5,
+                                                "bottom":  2353.5,
+                                                "top":  353.5
+                                            },
+                   "dimensions":  {
+                                      "height":  2708,
+                                      "width":  4300
+                                  },
+                   "sha256":  "47B0DAFF232D986251A380FE3DB87E60144C0235F3F5492C24411687D01FBD36",
+                   "file":  "gaia_sky.jpg"
+               },
+    "conversion":  {
+                       "jpegQuality":  94,
+                       "generator":  "tools/generate_gaia_equirectangular.ps1",
+                       "safeHammerRadius":  0.9975,
+                       "seamBlendColumns":  8
+                   },
+    "validation":  {
+                       "pureBlackPixels":  0,
+                       "meanSeamChannelDifference":  0.43522135416666669,
+                       "outputSha256":  "F2BA09DC29C68C479D87F212890F40EEEF95405C0AC2948248135D3A94A74965",
+                       "maxSeamChannelDifference":  4
+                   }
+}
