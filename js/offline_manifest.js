@@ -89,4 +89,4 @@ export const OFFLINE_ASSETS = [
   'textures/blackhole/schwarzschild-lut-512x512-rg32f.bin',
   'textures/blackhole/schwarzschild-lut-512x512.json',
 ];
-export const OFFLINE_TOTAL_BYTES = 31615581;
+export const OFFLINE_TOTAL_BYTES = 31624959;

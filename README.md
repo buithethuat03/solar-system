@@ -47,7 +47,9 @@ Schwarzschild light bending.
   solar options, corona effects, and a copper-red lunar totality — plus a
   catalog of 224 real eclipses (2001-2050, NASA GSFC canon) whose geometry
   (type, magnitude, gamma, contact times) is recomputed from the app's own
-  ephemeris and cross-checked in CI.
+  ephemeris and cross-checked in CI. Central solar events draw their
+  shadow-axis ground track on a correctly oriented globe, with a marker
+  riding the central line as the timeline plays.
 - **A real night sky**: 8,418 stars from the Yale Bright Star Catalogue
   placed by RA/Dec with B-V-derived colors, aligned with the photographic
   Milky Way backdrop.

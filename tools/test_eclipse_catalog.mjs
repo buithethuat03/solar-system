@@ -12,6 +12,9 @@ import {
   lunarEventGeometry,
   nextEclipse,
   isoToSimDays,
+  subsolarPoint,
+  shadowAxisGroundPoint,
+  solarGroundTrack,
 } from '../js/eclipse_math.js';
 import { findPhaseNear } from '../js/moon.js';
 
@@ -121,6 +124,59 @@ check('nextEclipse navigates the catalog both ways', () => {
   assert.ok(isoToSimDays(prev.d) < t0);
   const nextSolar = nextEclipse(t0, 1, 'S');
   assert.equal(nextSolar.t, 'S');
+});
+
+check('subsolar point lands on the tropics at the solstices', () => {
+  const june = subsolarPoint(isoToSimDays('2026-06-21T12:00:00Z'));
+  const dec = subsolarPoint(isoToSimDays('2025-12-21T12:00:00Z'));
+  assert.ok(Math.abs(june.latDeg - 23.43) < 0.05, `june lat ${june.latDeg}`);
+  assert.ok(Math.abs(dec.latDeg + 23.43) < 0.05, `dec lat ${dec.latDeg}`);
+  // Noon UTC sub-solar longitude differs from Greenwich only by the
+  // equation of time (a few minutes -> well under 1.5 degrees here).
+  assert.ok(Math.abs(june.lonDeg) < 1.5, `june lon ${june.lonDeg}`);
+  assert.ok(Math.abs(dec.lonDeg) < 1.5, `dec lon ${dec.lonDeg}`);
+});
+
+check('shadow-axis ground point reproduces every central greatest-eclipse location', () => {
+  const central = ECLIPSES.filter(e =>
+    e.t === 'S' && ['T', 'A', 'H'].includes(e.k) && Math.abs(e.g) <= 0.95);
+  assert.ok(central.length >= 60, `expected a full canon, saw ${central.length}`);
+  let maxLat = 0;
+  let maxLon = 0;
+  for (const ev of central) {
+    const p = shadowAxisGroundPoint(isoToSimDays(ev.d));
+    assert.ok(p, `axis must hit Earth at greatest eclipse ${ev.d}`);
+    const dLat = Math.abs(p.latDeg - ev.lat);
+    let dLon = Math.abs(p.lonDeg - ev.lon);
+    if (dLon > 180) dLon = 360 - dLon;
+    const dLonScaled = dLon * Math.cos(ev.lat * Math.PI / 180);
+    assert.ok(dLat < 2.0, `${ev.d}: lat off by ${dLat.toFixed(2)} deg`);
+    assert.ok(dLonScaled < 2.5, `${ev.d}: lon off by ${dLonScaled.toFixed(2)} deg`);
+    maxLat = Math.max(maxLat, dLat);
+    maxLon = Math.max(maxLon, dLonScaled);
+  }
+  console.log(`    ${central.length} central events | max lat err ${maxLat.toFixed(2)} deg | max lon err ${maxLon.toFixed(2)} deg`);
+});
+
+check('ground track is a contiguous polyline through greatest eclipse', () => {
+  const ev = ECLIPSES.find(e => e.d.startsWith('2027-08-02'));
+  const track = solarGroundTrack(ev);
+  assert.ok(track.length > 40, `track samples ${track.length}`);
+  const tMax = isoToSimDays(ev.d);
+  assert.ok(track[0].sd < tMax && track[track.length - 1].sd > tMax, 'spans greatest');
+  for (let i = 1; i < track.length; i++) {
+    assert.ok(track[i].sd > track[i - 1].sd, 'time-ordered');
+    const dLat = Math.abs(track[i].latDeg - track[i - 1].latDeg);
+    assert.ok(dLat < 5, `no latitude jumps (${dLat.toFixed(2)} deg)`);
+  }
+  // 2027-08-02 crosses southern Egypt near Luxor (~25.7N 32.6E) around max.
+  const atMax = track.reduce((best, pt) =>
+    (Math.abs(pt.sd - tMax) < Math.abs(best.sd - tMax) ? pt : best));
+  assert.ok(Math.abs(atMax.latDeg - 25.5) < 2, `Luxor lat ${atMax.latDeg.toFixed(1)}`);
+  assert.ok(Math.abs(atMax.lonDeg - 33.2) < 3, `Luxor lon ${atMax.lonDeg.toFixed(1)}`);
+  // Partial-only events yield no central line at all.
+  const partial = ECLIPSES.find(e => e.t === 'S' && e.k === 'P');
+  assert.equal(solarGroundTrack(partial).length, 0);
 });
 
 console.log(`\n  ${passed} passed, 0 failed`);

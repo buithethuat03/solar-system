@@ -12,9 +12,10 @@ import {
   moonEclipticPosition,
   moonHorizontalParallaxDeg,
   moonSemidiameterDeg,
+  precessEclipticJ2000ToDate,
 } from './moon.js';
 import { geocentricSunEcliptic } from './kepler.js';
-import { simDaysUTCtoTT } from './timescales.js';
+import { simDaysUTCtoTT, gmstDeg } from './timescales.js';
 import { ECLIPSES } from './eclipse_catalog.js';
 
 const DEG = Math.PI / 180;
@@ -154,6 +155,108 @@ export function lunarEventGeometry(ev) {
     tP1: tP1 ?? tMax - 0.16,
     tP4: tP4 ?? tMax + 0.16,
   };
+}
+
+// ---------------------------------------------------------------------------
+//  Ground track — where the Moon's shadow axis pierces the Earth ellipsoid.
+//
+//  Worked in the equatorial frame of date: Moon from the ELP series ('date'
+//  frame), Sun precessed from J2000, both rotated by the mean obliquity of
+//  date. Longitudes then follow from GMST. Everything geocentric-axis based:
+//  this is the central line, not the umbra outline, and carries the same
+//  ~±0.02-gamma / ±2-minute honesty budget as the rest of the module.
+// ---------------------------------------------------------------------------
+const KM_PER_AU = 149597870.7;
+const EARTH_EQ_RADIUS_KM = 6378.137;
+const EARTH_FLATTENING = 1 / 298.257223563;
+
+/** Mean obliquity of the ecliptic of date, degrees (Meeus 22.2, truncated). */
+const meanObliquityDeg = (T) => 23.43929111 - 0.01300417 * T - 1.64e-7 * T * T;
+
+// Geocentric equatorial-of-date position vectors of the Sun and Moon in km.
+function equatorialState(simDays) {
+  const ttDays = simDaysUTCtoTT(simDays);
+  const jdTT = ttDays + J2000_JD;
+  const T = ttDays / 36525;
+  const eps = meanObliquityDeg(T) * DEG;
+  const cosE = Math.cos(eps);
+  const sinE = Math.sin(eps);
+  const toEq = (lonDeg, latDeg, distKm) => {
+    const lon = lonDeg * DEG;
+    const lat = latDeg * DEG;
+    const x = Math.cos(lat) * Math.cos(lon) * distKm;
+    const y = Math.cos(lat) * Math.sin(lon) * distKm;
+    const z = Math.sin(lat) * distKm;
+    return [x, y * cosE - z * sinE, y * sinE + z * cosE];
+  };
+  const moon = moonEclipticPosition(jdTT, 'date');
+  const sun0 = geocentricSunEcliptic(ttDays);
+  const sun = precessEclipticJ2000ToDate(sun0.lonDeg, sun0.latDeg, T);
+  return {
+    moonKm: toEq(moon.lonDeg, moon.latDeg, moon.distKm),
+    sunKm: toEq(sun.lonDeg, sun.latDeg, sun0.distAU * KM_PER_AU),
+    gmst: gmstDeg(simDays + J2000_JD),
+  };
+}
+
+const wrapLon = (deg) => ((deg % 360) + 540) % 360 - 180;
+
+/** Sub-solar point (geodetic latitude = solar declination), degrees. */
+export function subsolarPoint(simDays) {
+  const { sunKm, gmst } = equatorialState(simDays);
+  const r = Math.hypot(sunKm[0], sunKm[1], sunKm[2]);
+  return {
+    latDeg: Math.asin(sunKm[2] / r) / DEG,
+    lonDeg: wrapLon(Math.atan2(sunKm[1], sunKm[0]) / DEG - gmst),
+  };
+}
+
+/**
+ * Geodetic point where the Sun→Moon shadow axis meets the Earth ellipsoid,
+ * or null when the axis misses (partial eclipses, outside the central window).
+ */
+export function shadowAxisGroundPoint(simDays) {
+  const { moonKm, sunKm, gmst } = equatorialState(simDays);
+  const dx = moonKm[0] - sunKm[0];
+  const dy = moonKm[1] - sunKm[1];
+  const dz = moonKm[2] - sunKm[2];
+  // Stretch z by 1/(1−f) so the WGS84 ellipsoid becomes a sphere of the
+  // equatorial radius; intersect there; the unscaled point lies on the ellipsoid.
+  const zk = 1 / (1 - EARTH_FLATTENING);
+  const mx = moonKm[0], my = moonKm[1], mz = moonKm[2] * zk;
+  const ddz = dz * zk;
+  const A = dx * dx + dy * dy + ddz * ddz;
+  const B = 2 * (mx * dx + my * dy + mz * ddz);
+  const C = mx * mx + my * my + mz * mz - EARTH_EQ_RADIUS_KM * EARTH_EQ_RADIUS_KM;
+  const disc = B * B - 4 * A * C;
+  if (disc < 0) return null;
+  const s = (-B - Math.sqrt(disc)) / (2 * A);   // near (day-side) surface
+  if (s < 0) return null;
+  const px = moonKm[0] + s * dx;
+  const py = moonKm[1] + s * dy;
+  const pz = moonKm[2] + s * dz;
+  const rho = Math.hypot(px, py);
+  return {
+    latDeg: Math.atan2(pz, rho * (1 - EARTH_FLATTENING) ** 2) / DEG,
+    lonDeg: wrapLon(Math.atan2(py, px) / DEG - gmst),
+  };
+}
+
+/**
+ * The central-line ground track of a solar catalog event: samples of
+ * { sd (UTC simDays), latDeg, lonDeg } every stepMinutes across ±4 h of
+ * greatest eclipse. Empty for partial/non-central events.
+ */
+export function solarGroundTrack(ev, stepMinutes = 1.5) {
+  if (ev.t !== 'S') return [];
+  const tMax = isoToSimDays(ev.d);
+  const step = stepMinutes / 1440;
+  const points = [];
+  for (let sd = tMax - 0.17; sd <= tMax + 0.17; sd += step) {
+    const p = shadowAxisGroundPoint(sd);
+    if (p) points.push({ sd, latDeg: p.latDeg, lonDeg: p.lonDeg });
+  }
+  return points;
 }
 
 /** Next catalog event at/after (dir=+1) or before (dir=−1) a UTC simDays. */

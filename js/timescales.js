@@ -117,3 +117,16 @@ export function simDaysUTCtoTT(simDays) {
 export function simDaysToJdTT(simDays) {
   return simDaysUTCtoTT(simDays) + 2451545.0;
 }
+
+/**
+ * Greenwich Mean Sidereal Time in degrees (IAU 1982) for a UT Julian Date.
+ * Good to well under a second of time across 1900–2100 — far tighter than
+ * the ±2-minute geocentric budget of the eclipse module that consumes it.
+ */
+export function gmstDeg(jdUT) {
+  const d = jdUT - 2451545.0;
+  const T = d / 36525;
+  const gmst = 280.46061837 + 360.98564736629 * d
+    + 0.000387933 * T * T - (T * T * T) / 38710000;
+  return ((gmst % 360) + 360) % 360;
+}

@@ -7,7 +7,7 @@
 // ============================================================================
 import * as THREE from 'three';
 import { resolveTexture, makeEarthMaterial, makeAtmosphere } from './bodies.js';
-import { solarEventGeometry, lunarEventGeometry, nextEclipse, isoToSimDays } from './eclipse_math.js';
+import { solarEventGeometry, lunarEventGeometry, nextEclipse, isoToSimDays, solarGroundTrack, subsolarPoint } from './eclipse_math.js';
 import { t as tr } from './i18n.js';
 
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -429,6 +429,7 @@ export function createEclipse(ctx) {
   function activateEvent(ev) {
     eventMode = ev;
     eventGeom = ev.t === 'S' ? solarEventGeometry(ev) : lunarEventGeometry(ev);
+    buildGroundTrack(ev);
     if (setSimDays) setSimDays(isoToSimDays(ev.d));   // orrery shows the real alignment
     t = 0.5; playing = true; scrub.value = 500;
     refreshEventStrip();
@@ -438,7 +439,101 @@ export function createEclipse(ctx) {
   function deactivateEvent() {
     eventMode = null;
     eventGeom = null;
+    clearGroundTrack();
     refreshEventStrip();
+  }
+
+  // ---- Central-line ground track (real solar events) ----------------------
+  // The path polyline and marker live as CHILDREN of the earth mesh in
+  // texture-local coordinates, so once the globe is oriented geographically
+  // they rotate with it and stay on the right countries automatically.
+  let trackLine = null;
+  let trackMarker = null;
+  let trackPoints = [];        // [{ sd, latDeg, lonDeg }] from solarGroundTrack
+  const D2R = Math.PI / 180;
+  const _tv = new THREE.Vector3();
+  const _e1 = new THREE.Vector3(); const _e2 = new THREE.Vector3(); const _e3 = new THREE.Vector3();
+  const _mE = new THREE.Matrix4(); const _mF = new THREE.Matrix4();
+  // Rig target frame: the Sun sits at -X, geographic north reads "up".
+  _mF.makeBasis(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1));
+
+  // Texture longitude lam (East+) sits at azimuth -lam in the unrotated mesh
+  // (same convention bodies.js calibrates the orrery Earth with).
+  function latLonToLocal(latDeg, lonDeg, r, out) {
+    const la = latDeg * D2R;
+    const lo = lonDeg * D2R;
+    return out.set(
+      Math.cos(la) * Math.cos(lo) * r,
+      Math.sin(la) * r,
+      -Math.cos(la) * Math.sin(lo) * r,
+    );
+  }
+
+  function clearGroundTrack() {
+    for (const obj of [trackLine, trackMarker]) {
+      if (obj) { earth.remove(obj); obj.geometry.dispose(); obj.material.dispose(); }
+    }
+    trackLine = trackMarker = null;
+    trackPoints = [];
+  }
+
+  function buildGroundTrack(ev) {
+    clearGroundTrack();
+    if (ev.t !== 'S') return;
+    trackPoints = solarGroundTrack(ev);
+    if (trackPoints.length < 2) { trackPoints = []; return; }
+    const positions = new Float32Array(trackPoints.length * 3);
+    trackPoints.forEach((pt, i) => {
+      latLonToLocal(pt.latDeg, pt.lonDeg, EARTH_R * 1.03, _tv);
+      positions.set([_tv.x, _tv.y, _tv.z], i * 3);
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    trackLine = new THREE.Line(geo, new THREE.LineBasicMaterial({
+      color: 0xffc86e, transparent: true, opacity: 0.95,
+    }));
+    earth.add(trackLine);
+    trackMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(EARTH_R * 0.045, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffe9b8 }),
+    );
+    trackMarker.visible = false;
+    earth.add(trackMarker);
+  }
+
+  // Orient the rig Earth so the real sub-solar meridian faces the rig Sun
+  // (-X) and the pole tilt matches the solar declination: the terminator and
+  // the drawn central line then land on the correct geography.
+  function orientEarthGeographic(sd) {
+    const ss = subsolarPoint(sd);
+    latLonToLocal(ss.latDeg, ss.lonDeg, 1, _e1);
+    _e2.set(0, 1, 0).addScaledVector(_e1, -_e1.y).normalize();
+    _e3.crossVectors(_e1, _e2);
+    _mE.makeBasis(_e1, _e2, _e3).invert();     // orthonormal: invert == transpose
+    earth.quaternion.setFromRotationMatrix(_mE.premultiply(_mF));
+  }
+
+  function updateTrackMarker(sd) {
+    if (!trackMarker || !trackPoints.length) return;
+    const first = trackPoints[0];
+    const last = trackPoints[trackPoints.length - 1];
+    if (sd < first.sd || sd > last.sd) { trackMarker.visible = false; return; }
+    let i = 1;
+    while (i < trackPoints.length - 1 && trackPoints[i].sd < sd) i++;
+    const a = trackPoints[i - 1];
+    const b = trackPoints[i];
+    const f = (sd - a.sd) / (b.sd - a.sd || 1);
+    // Shortest-arc longitude delta: wrapped [−180, 180) samples straddling the
+    // antimeridian must not lerp the long way through Greenwich.
+    let dLon = b.lonDeg - a.lonDeg;
+    if (dLon > 180) dLon -= 360;
+    else if (dLon < -180) dLon += 360;
+    latLonToLocal(
+      a.latDeg + (b.latDeg - a.latDeg) * f,
+      a.lonDeg + dLon * f,
+      EARTH_R * 1.035, trackMarker.position,
+    );
+    trackMarker.visible = true;
   }
 
   evPrevBtn.addEventListener('click', () => stepEvent(-1));
@@ -754,6 +849,7 @@ export function createEclipse(ctx) {
     rig.visible = false;
     clearShadow();
     clearOrbits();
+    clearGroundTrack();
     camera.position.copy(saved.pos); controls.target.copy(saved.tgt);
     if (onExit) onExit();
   }
@@ -800,8 +896,23 @@ export function createEclipse(ctx) {
       moonMat.emissive.copy(copper).multiplyScalar(inside * 1.5);
     }
     moon.rotation.y = t * 0.4;
-    earth.rotation.y = t * 0.5;
-    clouds.rotation.y = t * 0.55;
+    if (eventMode && eventGeom) {
+      // Real event: the globe wears its true orientation for the scrubbed UTC
+      // instant, so the terminator and central line are geographically right.
+      const pad = 10 / 1440;
+      const w0 = (eventMode.t === 'S' ? eventGeom.tC1 : eventGeom.tP1) - pad;
+      const w1 = (eventMode.t === 'S' ? eventGeom.tC4 : eventGeom.tP4) + pad;
+      const sd = w0 + t * (w1 - w0);
+      orientEarthGeographic(sd);
+      updateTrackMarker(sd);
+      clouds.rotation.y = t * 0.1;
+    } else {
+      // Write the full Euler: event mode sets earth.quaternion, which leaves
+      // stale x/z components behind — touching only .y would spin the demo
+      // globe around a tilted, near-flipped axis after leaving an event.
+      earth.rotation.set(0, t * 0.5, 0);
+      clouds.rotation.y = t * 0.55;
+    }
   }
 
   // ------------------------------------------------------------- POV geometry

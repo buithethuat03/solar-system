@@ -30,19 +30,24 @@ modules, textures, and model files that the app needs.
 The app opens at the current UTC date, playing forward at real-time speed. The
 Sun's info card is shown initially.
 
-- **Top bar:** live/follow/FPS status, eclipse chooser, View settings, Help, and
-  Reset view.
-- **Explore panel:** navigator for the Sun, eight planets, five dwarf planets,
-  seven moons, Gaia BH1, and—when a true-scale view is active—Voyager 1 and 2.
+- **Top bar:** live/follow status, eclipse chooser, View settings, Share
+  (copies a permalink of the exact current view), Screenshot (saves a
+  captioned PNG), Help, and Reset view. On screens narrower than about 700 px
+  these actions collapse into a **⋯** menu.
+- **Explore panel:** a search box plus the navigator for the Sun, eight
+  planets, five dwarf planets, seven moons, Gaia BH1, and—when a true-scale
+  view is active—Voyager 1 and 2. The search matches English names,
+  localized names, and ids (`/` focuses it, `Enter` jumps to the first hit).
 - **Info panel:** the selected object's description, physical/orbital values,
   facts, source links and provenance, and Focus & follow control.
 - **Bottom bar:** play, reverse, Now, the speed slider and presets, the UTC
   simulation clock, and the date picker.
 - **3D viewport:** direct mouse, touch, and keyboard navigation.
 
-The Explore and info panels have collapse buttons. On narrow screens, the date
-picker, some speed presets, and the eclipse description panel may be hidden to
-leave more room for the visualization.
+The Explore and info panels have collapse buttons. On phones the info panel
+becomes a bottom sheet with a drag handle, the date picker compacts to a
+calendar button that still opens the native date dialog, and the speed presets
+scroll sideways.
 
 ## Move the camera
 
@@ -58,6 +63,11 @@ leave more room for the visualization.
 Keyboard flight moves both the camera and its orbit target. Its speed scales
 with the current viewing distance, so it remains useful in both compressed and
 true-scale views. Starting manual flight stops an active follow.
+
+Additional keyboard shortcuts: `/` search, `?` help, `Space` play/pause,
+`L`/`O`/`M` toggle labels/orbits/moons, `[` and `]` change speed, `,` and `.`
+step one day, `0` resets the camera, and `Esc` closes things in priority order
+(help, then popovers, then special modes, then follow).
 
 Use **Reset view** to return to the default framing for the current distance
 mode. Resetting Accurate mode returns to the drifting Sun framing.
@@ -132,18 +142,34 @@ Choose **View** in the top bar to open these settings:
 | Moons | Shows or hides all seven modeled moons and their orbit lines. |
 | Dwarf planets | Shows or hides Pluto, Ceres, Haumea, Makemake, and Eris. |
 | Spacecraft (Voyagers) | Shows or hides both probes in Realistic and Accurate modes. |
+| Black holes | Shows or hides the Gaia BH1 navigator entry and on-screen locator. |
 | Asteroid & Kuiper belts | Shows or hides both GPU-instanced belts. |
 | Sun glow (bloom) | Enables or disables selective HDR bloom around the Sun. |
 | Fullscreen | Enters browser fullscreen and hides the app chrome for an unobstructed view. |
 | Distance scale | Switches among Compressed, Realistic, and Accurate · live. |
 | Texture quality | Selects the standard set or the high-resolution set (up to 8K). |
+| Offline pack | Downloads all ~30 MB of 2K assets through the service worker so the app keeps working without a network (needs HTTPS or localhost). |
 | Language | Selects English or Vietnamese. |
 
-Texture quality and language choices are saved in the browser and reload the
-page so the scene can rebuild. The high-resolution set contains maps up to 8K;
+Every view setting except Fullscreen persists in the browser and is restored
+on the next visit (browsers require a fresh gesture to re-enter fullscreen).
+Texture quality and language additionally reload the page so the scene can
+rebuild. The high-resolution set contains maps up to 8K;
 individual source maps vary in resolution. Earth and the Milky Way background
 use their high-resolution maps in either mode. Fullscreen preserves the other
 View settings; exiting browser fullscreen restores the interface.
+
+## Share a view, take screenshots, work offline
+
+The **Share** button copies a link that encodes the selected body, UTC date,
+distance mode, visible layers, speed, and pause state in the URL hash. Opening
+such a link reproduces that exact view without overwriting the recipient's own
+saved settings. The **Screenshot** button renders a fresh frame and saves it
+as a PNG stamped with the selected body and UTC date.
+
+The app installs as a PWA on supporting browsers. The **Offline pack** entry
+in View settings prefetches every 2K asset (~30 MB) so a later visit works
+fully offline; assets you have already seen are cached automatically.
 
 ## Understand the distance modes
 
@@ -315,6 +341,27 @@ Both modes provide:
 - play/pause with the on-screen button or `Space`; and
 - a scrubber that pauses playback at the selected phase.
 
+### Real eclipses (2001–2050)
+
+In the timeline bar, an event strip shows a real eclipse from the NASA GSFC
+canon. Step through the catalog with ◀ and ▶, then click the event itself
+(the date · type · Saros button) to load it: the timeline clock switches to real UTC contact times, the main orrery
+jumps to the same instant, and the eclipse type (total, annular, hybrid,
+partial) emerges from the app's own Sun/Moon geometry instead of a demo
+toggle. The strip reports the event's gamma and magnitude, labelled as a
+geocentric approximation (about ±10 minutes).
+
+For central solar events the rig globe also wears its true orientation for
+the scrubbed instant — the day/night terminator falls on the correct
+geography — and the computed **central line** is drawn across the surface
+with a marker that travels along it as the timeline plays. For 2027-08-02,
+for example, the line runs from the Atlantic across North Africa and the Red
+Sea toward the Indian Ocean. The line is the shadow-axis ground track; the
+umbra is tens of kilometres wide around it, and local circumstances remain
+out of scope.
+
+Click the event button again to return to the didactic demo timeline.
+
 ### Solar eclipse
 
 The Moon crosses the Sun in the surface view. Use **Total** to see totality,
@@ -329,9 +376,9 @@ penumbral, partial, and total stages, while the surface view dims the Moon and
 turns it copper-red during totality. The Total/Annular selector is intentionally
 hidden because it applies only to solar eclipses.
 
-Choose **Exit eclipse** or press `Esc` to restore the orrery and its saved camera
-view. Eclipse mode is a didactic visualization, not a prediction for the date
-selected in the main simulation.
+Choose **Exit eclipse** or press `Esc` to restore the orrery and its saved
+camera view. The demo timeline is a didactic visualization; the event strip
+described above is the way to study real, dated eclipses.
 
 ## Tips for the best experience
 
