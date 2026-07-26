@@ -179,6 +179,10 @@ function buildStarfield(scene, count, rInner, rOuter, dpr) {
 }
 
 // Ring mesh with radial UVs so a strip texture maps from inner -> outer edge.
+// Physically shaded: an analytic planet shadow (sphere-vs-sunray with a soft
+// penumbra band and a 0.06 planet-shine floor) and a two-lobe phase function
+// (rings brighten strongly toward backscatter). uSunPos/uPlanetPos are world
+// positions refreshed each frame, so floating-origin rebases are safe.
 function makeRing(innerR, outerR, opts, loader, maxAniso = 1) {
   const seg = 128;
   const geo = new THREE.RingGeometry(innerR, outerR, seg, 4);
@@ -189,39 +193,94 @@ function makeRing(innerR, outerR, opts, loader, maxAniso = 1) {
     v.fromBufferAttribute(pos, i);
     const radius = v.length();
     const u = (radius - innerR) / (outerR - innerR);
-    uv.setXY(i, u, 1);   // sample across the texture's width
+    uv.setXY(i, u, 0.5);   // sample the strip's centre row (v=1 hit the edge texels)
   }
-  let mat;
+  let tex;
   if (opts.texture) {
-    const tex = loader.load(resolveTexture(opts.texture));
+    tex = loader.load(resolveTexture(opts.texture));
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = maxAniso;
-    mat = new THREE.MeshBasicMaterial({
-      map: tex, side: THREE.DoubleSide, transparent: true,
-      opacity: 1.0, depthWrite: false,
-    });
   } else {
-    mat = new THREE.MeshBasicMaterial({
-      color: opts.color ?? 0xaaaaaa, side: THREE.DoubleSide,
-      transparent: true, opacity: opts.opacity ?? 0.4, depthWrite: false,
-    });
+    // Flat-colour rings (Uranus) go through the same shader via a 1x1 texel.
+    const c = new THREE.Color(opts.color ?? 0xaaaaaa);
+    tex = new THREE.DataTexture(new Uint8Array([
+      Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255),
+      Math.round((opts.opacity ?? 0.4) * 255),
+    ]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
   }
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      map: { value: tex },
+      uSunPos: { value: new THREE.Vector3() },
+      uPlanetPos: { value: new THREE.Vector3() },
+      uPlanetRadius: { value: opts.planetRadius ?? 1 },
+    },
+    vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      varying vec2 vUv; varying vec3 vWorldPos;
+      void main(){
+        vUv = uv;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+        #include <logdepthbuf_vertex>
+      }`,
+    fragmentShader: `
+      #include <common>
+      #include <logdepthbuf_pars_fragment>
+      uniform sampler2D map;
+      uniform vec3 uSunPos; uniform vec3 uPlanetPos; uniform float uPlanetRadius;
+      varying vec2 vUv; varying vec3 vWorldPos;
+      void main(){
+        vec4 tex = texture2D(map, vec2(vUv.x, 0.5));
+        vec3 L = normalize(uSunPos - vWorldPos);
+        vec3 C = uPlanetPos - vWorldPos;              // fragment -> planet centre
+        float b = dot(C, L);
+        float d = sqrt(max(dot(C, C) - b * b, 0.0));
+        float lit = (b > 0.0)
+          ? smoothstep(uPlanetRadius * 0.985, uPlanetRadius * 1.04, d)
+          : 1.0;
+        vec3 V = normalize(cameraPosition - vWorldPos);
+        float mu = dot(V, L);
+        float phase = 0.42 + 0.58 * max(mu, 0.0) + 0.15 * pow(max(-mu, 0.0), 3.0);
+        vec3 col = tex.rgb * (0.06 + 0.94 * lit) * phase;
+        gl_FragColor = vec4(col, tex.a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <logdepthbuf_fragment>
+      }`,
+    side: THREE.DoubleSide, transparent: true, depthWrite: false,
+  });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;   // lay flat in the equatorial (X-Z) plane
+
   return mesh;
 }
 
 // Soft atmospheric rim (additive fresnel shell), used for Earth / Venus.
 // Exported: the eclipse rig reuses it for Earth's limb and the Sun's glow shell.
-export function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0) {
+// opts.sunTerm (default off — the eclipse rig keeps the omnidirectional rim):
+// darkens the night limb and paints a warm band along the terminator, driven
+// by a per-frame world-space uSunDir.
+export function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0, opts = {}) {
+  const sunTerm = opts.sunTerm === true;
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(color) }, uPower: { value: power }, uIntensity: { value: intensity } },
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uPower: { value: power },
+      uIntensity: { value: intensity },
+      uSunDir: { value: new THREE.Vector3(1, 0, 0) },
+    },
     vertexShader: `
       #include <common>
       #include <logdepthbuf_pars_vertex>
-      varying vec3 vN; varying vec3 vView;
+      varying vec3 vN; varying vec3 vView; varying vec3 vWorldN;
       void main(){
         vN = normalize(normalMatrix * normal);
+        vWorldN = normalize(mat3(modelMatrix) * normal);
         vec4 mv = modelViewMatrix * vec4(position,1.0);
         vView = normalize(-mv.xyz);
         gl_Position = projectionMatrix * mv;
@@ -229,11 +288,19 @@ export function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0) {
       }`,
     fragmentShader: `
       #include <logdepthbuf_pars_fragment>
-      varying vec3 vN; varying vec3 vView;
+      varying vec3 vN; varying vec3 vView; varying vec3 vWorldN;
       uniform vec3 uColor; uniform float uPower; uniform float uIntensity;
+      uniform vec3 uSunDir;
       void main(){
         float f = pow(1.0 - abs(dot(vN, vView)), uPower);
-        gl_FragColor = vec4(uColor, f * uIntensity);
+        ${sunTerm ? `
+        float dNL = dot(normalize(vWorldN), normalize(uSunDir));
+        float day = smoothstep(-0.25, 0.15, dNL);
+        float band = 1.0 - smoothstep(0.0, 0.35, abs(dNL));
+        vec3 col = mix(uColor * 0.06, uColor, day)
+          + vec3(1.0, 0.45, 0.22) * band * 0.35;
+        gl_FragColor = vec4(col, f * uIntensity * mix(0.12, 1.0, day));` : `
+        gl_FragColor = vec4(uColor, f * uIntensity);`}
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
         #include <logdepthbuf_fragment>
@@ -241,7 +308,9 @@ export function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0) {
     transparent: true, blending: THREE.AdditiveBlending,
     side: THREE.BackSide, depthWrite: false,
   });
-  return new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 48), mat);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 48), mat);
+  mesh.renderOrder = 6;
+  return mesh;
 }
 
 // Custom Earth material: day/night blend driven by a live sun direction.
@@ -398,9 +467,56 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   const sunTex = loadMap(SUN.texture);
   const sunRadius = SUN.radiusEarth * CONFIG.EARTH_RADIUS_UNITS;   // true scale
   const SUN_VISUAL_SCALE = CONFIG.SUN_RADIUS_UNITS / sunRadius;    // shrink for the compressed view
+  // Granulating photosphere: two counter-scrolling warped samples of the map,
+  // value-noise cell brightness, limb darkening and a warm limb — modeled on
+  // the eclipse rig's proven sun shader, but tone-mapped/encoded so the
+  // bloom-off path stays correct.
+  const sunUniforms = { map: { value: sunTex }, uTime: { value: 0 } };
   const sunMesh = new THREE.Mesh(
     new THREE.SphereGeometry(sunRadius, 64, 64),
-    new THREE.MeshBasicMaterial({ map: sunTex })
+    new THREE.ShaderMaterial({
+      uniforms: sunUniforms,
+      vertexShader: `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
+        varying vec2 vUv; varying vec3 vN; varying vec3 vView;
+        void main(){
+          vUv = uv;
+          vN = normalize(normalMatrix * normal);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vView = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+          #include <logdepthbuf_vertex>
+        }`,
+      fragmentShader: `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
+        uniform sampler2D map; uniform float uTime;
+        varying vec2 vUv; varying vec3 vN; varying vec3 vView;
+        float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float vnoise(vec2 p){
+          vec2 i = floor(p), f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+                     mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);
+        }
+        void main(){
+          vec2 warp = vec2(vnoise(vUv * 24.0 + uTime * 0.015),
+                           vnoise(vUv * 24.0 - uTime * 0.011)) - 0.5;
+          vec3 a = texture2D(map, vUv + warp * 0.004 + vec2(uTime * 0.0008, 0.0)).rgb;
+          vec3 b = texture2D(map, vUv - warp * 0.006 - vec2(uTime * 0.0005, 0.0)).rgb;
+          vec3 col = mix(a, b, 0.5);
+          float gran = vnoise(vUv * vec2(160.0, 80.0) + warp * 8.0 + uTime * 0.05);
+          col *= 0.9 + 0.2 * gran;
+          float mu = clamp(abs(dot(normalize(vN), normalize(vView))), 0.0, 1.0);
+          col *= 0.35 + 0.65 * pow(mu, 0.6);
+          col += vec3(1.0, 0.55, 0.25) * pow(1.0 - mu, 2.5) * 0.6;
+          gl_FragColor = vec4(col, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+          #include <logdepthbuf_fragment>
+        }`,
+    })
   );
   // The Sun's rotation axis is tilted ~7.25° to the ecliptic (IAU pole);
   // per-frame spin composes with this base orientation in update().
@@ -495,13 +611,16 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         new THREE.SphereGeometry(radius * 1.015, 64, 64),
         new THREE.MeshStandardMaterial({ alphaMap: cT, transparent: true, color: 0xffffff, depthWrite: false, opacity: 0.9 })
       );
+      clouds.renderOrder = 4;
       tilt.add(clouds);
     }
-    // Atmosphere (Earth)
-    if (data.id === 'earth') tilt.add(makeAtmosphere(radius * 1.06, 0x5aa0ff, 3.2, 0.9));
+    // Atmosphere shells that track the Sun (night limb goes dark, warm terminator)
+    const atmos = [];
+    const addAtmo = (shell) => { tilt.add(shell); atmos.push(shell); };
+    if (data.id === 'earth') addAtmo(makeAtmosphere(radius * 1.06, 0x5aa0ff, 3.2, 0.9, { sunTerm: true }));
     // Subtle limb haze for the gas / ice giants
     const GIANT_ATMO = { jupiter: 0xe0c39a, saturn: 0xe8dcab, uranus: 0xa6e6ec, neptune: 0x6f8cff };
-    if (GIANT_ATMO[data.id]) tilt.add(makeAtmosphere(radius * 1.03, GIANT_ATMO[data.id], 4.5, 0.55));
+    if (GIANT_ATMO[data.id]) addAtmo(makeAtmosphere(radius * 1.03, GIANT_ATMO[data.id], 4.5, 0.55, { sunTerm: true }));
     // Venus haze layer
     let atmoLayer = null;
     if (data.atmosphereTexture) {
@@ -510,14 +629,17 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         new THREE.SphereGeometry(radius * 1.02, 64, 64),
         new THREE.MeshStandardMaterial({ map: aT, transparent: true, opacity: 0.55, depthWrite: false })
       );
+      atmoLayer.renderOrder = 4;
       tilt.add(atmoLayer);
-      tilt.add(makeAtmosphere(radius * 1.07, 0xffe0a0, 3.0, 0.6));
+      addAtmo(makeAtmosphere(radius * 1.07, 0xffe0a0, 3.0, 0.6, { sunTerm: true }));
     }
 
     // Rings
     let ring = null;
     if (data.ring) {
-      ring = makeRing(radius * data.ring.inner, radius * data.ring.outer, data.ring, loader, maxAniso);
+      ring = makeRing(radius * data.ring.inner, radius * data.ring.outer,
+        { ...data.ring, planetRadius: radius }, loader, maxAniso);
+      ring.renderOrder = 5;
       tilt.add(ring);
     }
 
@@ -577,7 +699,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     }
 
     planets.push({
-      data, pivot, tilt, mesh, clouds, ring, atmoLayer, bodyVisualScale,
+      data, pivot, tilt, mesh, clouds, ring, atmoLayer, atmos, bodyVisualScale,
       moons: moonObjs, radius, worldPos: new THREE.Vector3(),
     });
   }
@@ -588,6 +710,10 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   function setScaleMode(mode) {
     const visual = (mode === 'visual');
     sunMesh.scale.setScalar(visual ? SUN_VISUAL_SCALE : 1);
+    // In the compressed view the old 5x corona spanned ~110 units — engulfing
+    // every orbit out to Mars. Tighter sprites there; full glory at true scale.
+    corona.scale.setScalar(sunRadius * (visual ? 1.8 : 5));
+    glow.scale.setScalar(sunRadius * (visual ? 2.2 : 2.8));
     for (const p of planets) {
       p.tilt.scale.setScalar(visual ? p.bodyVisualScale : 1);
       for (const m of p.moons) {
@@ -979,6 +1105,18 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         if (p.atmoLayer) p.atmoLayer.rotation.y = rot * 0.9;
       }
 
+      // Sun-tracking uniforms: atmosphere shells (night limb darkening) and
+      // the ring shader's analytic planet shadow. World positions, so the
+      // floating-origin rebases are handled for free.
+      if (p.atmos.length || p.ring) {
+        sunDirTmp.set(-sp.x, -sp.y, -sp.z).normalize();
+        for (const shell of p.atmos) shell.material.uniforms.uSunDir.value.copy(sunDirTmp);
+        if (p.ring) {
+          sunMesh.getWorldPosition(p.ring.material.uniforms.uSunPos.value);
+          p.mesh.getWorldPosition(p.ring.material.uniforms.uPlanetPos.value);
+        }
+      }
+
       // Moons. Earth's Moon runs on the truncated ELP2000 ephemeris (real
       // phase, latitude, and — at true scale — the real eccentric distance);
       // the others are circular with a HORIZONS-derived J2000 epoch phase.
@@ -996,6 +1134,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         m.mesh.rotation.y = ang;   // keep one face toward the planet (tidal lock)
       }
     }
+    sunUniforms.uTime.value = performance.now() / 1000;
     // Sun rotates ~every 25.4 days about its IAU-tilted axis.
     _sunSpin.setFromAxisAngle(Y_UP, (simDays / 25.38) * TWO_PI);
     sunMesh.quaternion.copy(sunPoleQuat).multiply(_sunSpin);
