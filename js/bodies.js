@@ -6,8 +6,10 @@ import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SUN, PLANETS, MOONS, BELTS, CONFIG, VOYAGERS } from './data.js';
 import { scenePosition, orbitPoints, makeDistanceFn, voyagerScenePosition } from './kepler.js';
+import { equatorialToSceneVec, moonOrbitPosition } from './astro-math.js';
 
 const TWO_PI = Math.PI * 2;
+const Y_UP = new THREE.Vector3(0, 1, 0);
 const MIN_RADIUS = 0.34;          // minimum visible radius for tiny bodies
 const ROCKY = new Set(['mercury', 'venus', 'mars', 'pluto']);   // get albedo-based bump relief
 const DEG2RAD = Math.PI / 180;
@@ -21,6 +23,7 @@ const DRIFT_DIR = new THREE.Vector3(0.52, 0.80, 0.30).normalize();
 // Drift rate scales with the true-scale ruler so the accurate-view helices keep
 // the same look they had when an AU was 140 units (now it is ~37,570).
 const DRIFT_RATE = CONFIG.DIST_REAL_K * (0.62 / 140);   // scene-units per simulated day
+const _sunSpin = new THREE.Quaternion();
 // Trails are sampled by SIMULATED TIME (not frame rate). Each body shows ~3
 // orbits of wake (the Sun: 10 years of drift), and its point count is set by
 // TRAIL_DENSITY (samples per orbit) so the segment angle is ~1° for EVERY body
@@ -50,12 +53,9 @@ let TEX_RES = 'low';
 export function resolveTexture(path) {
   return TEX_RES === 'high' ? path.replace(/^textures\//, 'textures/8k/') : path;
 }
-// Always use the high-res (8K) set, regardless of the toggle — for the visually
-// dominant "hero" surfaces (the Milky-Way sky and Earth) we want them crisp at
-// all times, even in the lightweight 2K mode.
-export function highResTexture(path) {
-  return path.replace(/^textures\//, 'textures/8k/');
-}
+// (The old highResTexture() "always 8K for hero surfaces" override is gone: it
+// forced ~20 MB of 8K Earth JPEGs onto the 2K setting. The Milky-Way sky keeps
+// its explicit 8K path below — at 1.9 MB it is a deliberate exception.)
 
 // ---------------------------------------------------------------------------
 //  Galactic-plane geometry — so the Milky Way sits where it really is.
@@ -70,16 +70,10 @@ const NGP_RA = 192.85948, NGP_DEC = 27.12825;   // North Galactic Pole (J2000)
 const GC_RA  = 266.40499, GC_DEC = -28.93617;   // Galactic Centre / Sgr A* (J2000)
 
 // Equatorial RA/Dec (deg) → unit direction in the scene's coordinate frame.
+// Thin Vector3 wrapper over the Node-tested implementation in astro-math.js.
 function equatorialToScene(raDeg, decDeg) {
-  const ra = raDeg * DEG2RAD, dec = decDeg * DEG2RAD;
-  const xe = Math.cos(dec) * Math.cos(ra);
-  const ye = Math.cos(dec) * Math.sin(ra);
-  const ze = Math.sin(dec);
-  // equatorial → ecliptic (rotate about the vernal-equinox axis by the obliquity)
-  const c = Math.cos(ECL_OBLIQUITY), s = Math.sin(ECL_OBLIQUITY);
-  const xc = xe, yc = ye * c + ze * s, zc = -ye * s + ze * c;
-  // ecliptic (X,Y,Z) → scene (X, Z, -Y)  — identical to kepler.js
-  return new THREE.Vector3(xc, zc, -yc);
+  const d = equatorialToSceneVec(raDeg, decDeg);
+  return new THREE.Vector3(d.x, d.y, d.z);
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +163,8 @@ function buildStarfield(scene, count, rInner, rOuter, dpr) {
       void main(){
         vec4 t = texture2D(uTex, gl_PointCoord);
         gl_FragColor = vec4(vColor * t.rgb, t.a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
         #include <logdepthbuf_fragment>
       }`,
     transparent: true, blending: THREE.AdditiveBlending,
@@ -282,6 +278,8 @@ export function makeAtmosphere(radius, color, power = 3.0, intensity = 1.0) {
       void main(){
         float f = pow(1.0 - abs(dot(vN, vView)), uPower);
         gl_FragColor = vec4(uColor, f * uIntensity);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
         #include <logdepthbuf_fragment>
       }`,
     transparent: true, blending: THREE.AdditiveBlending,
@@ -338,15 +336,20 @@ export function makeEarthMaterial(dayTex, nightTex, specTex) {
         float spec = pow(max(dot(N, H), 0.0), 60.0) * ocean * clamp(d, 0.0, 1.0);
         col += vec3(1.0, 0.95, 0.85) * spec * 1.6;
         gl_FragColor = vec4(col, 1.0);
+        // Tone map + encode here so the bloom-OFF direct render matches the
+        // bloom path (both chunks no-op when rendering into composer targets).
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
         #include <logdepthbuf_fragment>
       }`,
   });
 }
 
-// Ring of points for a circular moon orbit of the given radius (X-Z plane).
+// Ring of points for a circular moon orbit of the given radius (X-Z plane),
+// wound in the prograde direction to match moonOrbitPosition.
 function moonCirclePts(dist) {
   const pts = [];
-  for (let s = 0; s <= 96; s++) { const a = (s / 96) * TWO_PI; pts.push(Math.cos(a) * dist, 0, Math.sin(a) * dist); }
+  for (let s = 0; s <= 96; s++) { const a = (s / 96) * TWO_PI; pts.push(Math.cos(a) * dist, 0, -Math.sin(a) * dist); }
   return pts;
 }
 
@@ -435,6 +438,11 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     new THREE.SphereGeometry(sunRadius, 64, 64),
     new THREE.MeshBasicMaterial({ map: sunTex })
   );
+  // The Sun's rotation axis is tilted ~7.25° to the ecliptic (IAU pole);
+  // per-frame spin composes with this base orientation in update().
+  const sunPoleQuat = new THREE.Quaternion().setFromUnitVectors(
+    Y_UP, equatorialToScene(SUN.pole.ra, SUN.pole.dec),
+  );
   sunMesh.userData = { kind: 'sun', ref: SUN };
   scene.add(sunMesh);                          // initial scale applied by setScaleMode() below
   selectable.push(sunMesh);
@@ -478,18 +486,29 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     scene.add(pivot);
 
     const tilt = new THREE.Group();           // applies axial tilt
-    tilt.rotation.z = THREE.MathUtils.degToRad(data.axialTilt);
+    if (data.pole) {
+      // IAU J2000 north pole → minimal-arc rotation from scene +Y. The old
+      // rotation.z leaned every axis toward scene −X regardless of the real
+      // pole direction, which shifted Earth's seasons by ~3 months and mis-set
+      // Saturn's ring opening angle against the simulated date.
+      tilt.quaternion.setFromUnitVectors(Y_UP, equatorialToScene(data.pole.ra, data.pole.dec));
+    } else {
+      // Small dwarfs without a measured IAU pole keep the legacy magnitude-only tilt.
+      tilt.rotation.z = THREE.MathUtils.degToRad(data.axialTilt);
+    }
     pivot.add(tilt);
 
     // Planet surface
     let mat, mesh;
     const geo = new THREE.SphereGeometry(radius, 64, 64);
     if (data.id === 'earth') {
-      // Earth always uses the 8K maps (hero body) — independent of the 2K/8K toggle.
-      const dayT = loader.load(highResTexture(data.texture)); dayT.colorSpace = THREE.SRGBColorSpace;
-      const nightT = loader.load(highResTexture(data.nightTexture)); nightT.colorSpace = THREE.SRGBColorSpace;
+      // Earth honors the 2K/8K texture setting like every other body. The old
+      // always-8K special case made the "2K · standard" mode download ~20 MB
+      // of 8K JPEGs (decoding to ~900 MB of VRAM) on every visit.
+      const dayT = loader.load(resolveTexture(data.texture)); dayT.colorSpace = THREE.SRGBColorSpace;
+      const nightT = loader.load(resolveTexture(data.nightTexture)); nightT.colorSpace = THREE.SRGBColorSpace;
       let specT = null;
-      if (data.specularTexture) { specT = loader.load(highResTexture(data.specularTexture)); specT.colorSpace = THREE.NoColorSpace; }
+      if (data.specularTexture) { specT = loader.load(resolveTexture(data.specularTexture)); specT.colorSpace = THREE.NoColorSpace; }
       mat = makeEarthMaterial(dayT, nightT, specT);
       mesh = new THREE.Mesh(geo, mat);
     } else {
@@ -505,10 +524,11 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     tilt.add(mesh);
     selectable.push(mesh);
 
-    // Clouds (Earth) — also always 8K to match the Earth surface.
+    // Clouds — follow the texture-resolution setting (the 8K cloud map alone
+    // is 11.6 MB, larger than the entire 2K planet set).
     let clouds = null;
     if (data.cloudsTexture) {
-      const cT = loader.load(data.id === 'earth' ? highResTexture(data.cloudsTexture) : resolveTexture(data.cloudsTexture));
+      const cT = loader.load(resolveTexture(data.cloudsTexture));
       clouds = new THREE.Mesh(
         new THREE.SphereGeometry(radius * 1.015, 64, 64),
         new THREE.MeshStandardMaterial({ alphaMap: cT, transparent: true, color: 0xffffff, depthWrite: false, opacity: 0.9 })
@@ -744,7 +764,8 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
       const period = 365.25 * Math.pow(a, 1.5);     // Kepler's 3rd law (days)
       const ang = ang0[i] + (TWO_PI / period) * simDays;
       const R = distFn(a);
-      dummy.position.set(Math.cos(ang) * R, yfrac[i] * R, Math.sin(ang) * R);
+      // −sin matches the planets' prograde +X → −Z sweep (see astro-math.js).
+      dummy.position.set(Math.cos(ang) * R, yfrac[i] * R, -Math.sin(ang) * R);
       dummy.scale.set(sx[i], sy[i], sz[i]);
       dummy.rotation.set(0, ang, 0);
       dummy.updateMatrix();
@@ -917,15 +938,20 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         if (p.atmoLayer) p.atmoLayer.rotation.y = rot * 0.9;
       }
 
-      // moons (near-circular orbits; sign of period = orbit direction)
+      // moons (near-circular orbits; sign of period = orbit direction).
+      // moonOrbitPosition carries the prograde +X → −Z scene convention; the
+      // former +sin variant made every moon (and Triton doubly so) revolve
+      // backwards relative to its planet.
       for (const m of p.moons) {
         const md = m.data;
         const ang = (TWO_PI / md.periodDays) * simDays;
-        m.mesh.position.set(Math.cos(ang) * m.dist, 0, Math.sin(ang) * m.dist);
+        moonOrbitPosition(ang, m.dist, m.mesh.position);
         m.mesh.rotation.y = ang;   // keep one face toward the planet (tidal lock)
       }
     }
-    sunMesh.rotation.y = (simDays / 25.38) * TWO_PI;   // Sun rotates ~every 25.4 days
+    // Sun rotates ~every 25.4 days about its IAU-tilted axis.
+    _sunSpin.setFromAxisAngle(Y_UP, (simDays / 25.38) * TWO_PI);
+    sunMesh.quaternion.copy(sunPoleQuat).multiply(_sunSpin);
     asteroidBelt.mesh.position.copy(drift);
     kuiperBelt.mesh.position.copy(drift);
     updateBelt(asteroidBelt, simDays);

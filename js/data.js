@@ -56,7 +56,7 @@ export const SUN = {
   texture: 'textures/sun.jpg',
   radiusEarth: 109.2,
   rotationHours: 609.12,     // ~25.4 days at equator
-  axialTilt: 7.25,
+  axialTilt: 7.25, pole: { ra: 286.13, dec: 63.87 },
   color: 0xffcc55,
   description:
     'The Sun is the star at the heart of the Solar System — a near-perfect ' +
@@ -298,7 +298,7 @@ export const PLANETS = [
   {
     id: 'mercury', name: 'Mercury', type: 'Terrestrial Planet',
     texture: 'textures/mercury.jpg', color: 0xa9a9a9,
-    radiusEarth: 0.383, axialTilt: 0.034, rotationHours: 1407.6,
+    radiusEarth: 0.383, axialTilt: 0.034, pole: { ra: 281.0103, dec: 61.4155 }, rotationHours: 1407.6,
     a: 0.38709927, e: 0.20563593, i: 7.00497902,
     om: 48.33076593, wbar: 77.45779628, L0: 252.25032350, periodDays: 87.969,
     description:
@@ -333,7 +333,7 @@ export const PLANETS = [
     id: 'venus', name: 'Venus', type: 'Terrestrial Planet',
     texture: 'textures/venus_surface.jpg', color: 0xe6c27a,
     atmosphereTexture: 'textures/venus_atmosphere.jpg',
-    radiusEarth: 0.949, axialTilt: 177.36, rotationHours: -5832.5,
+    radiusEarth: 0.949, axialTilt: 177.36, pole: { ra: 272.76, dec: 67.16 }, rotationHours: -5832.5,
     a: 0.72333566, e: 0.00677672, i: 3.39467605,
     om: 76.67984255, wbar: 131.60246718, L0: 181.97909950, periodDays: 224.701,
     description:
@@ -370,7 +370,7 @@ export const PLANETS = [
     nightTexture: 'textures/earth_night.jpg',
     cloudsTexture: 'textures/earth_clouds.jpg',
     specularTexture: 'textures/earth_specular.png',   // SSS water mask → precise ocean glint
-    radiusEarth: 1.0, axialTilt: 23.44, rotationHours: 23.9345,
+    radiusEarth: 1.0, axialTilt: 23.44, pole: { ra: 0.0, dec: 90.0 }, rotationHours: 23.9345,
     a: 1.00000261, e: 0.01671123, i: -0.00001531,
     om: 0.0, wbar: 102.93768193, L0: 100.46457166, periodDays: 365.256,
     description:
@@ -404,7 +404,7 @@ export const PLANETS = [
   {
     id: 'mars', name: 'Mars', type: 'Terrestrial Planet',
     texture: 'textures/mars.jpg', color: 0xc1440e,
-    radiusEarth: 0.532, axialTilt: 25.19, rotationHours: 24.6229,
+    radiusEarth: 0.532, axialTilt: 25.19, pole: { ra: 317.681, dec: 52.887 }, rotationHours: 24.6229,
     a: 1.52371034, e: 0.09339410, i: 1.84969142,
     om: 49.55953891, wbar: -23.94362959, L0: -4.55343205, periodDays: 686.980,
     description:
@@ -439,7 +439,7 @@ export const PLANETS = [
   {
     id: 'jupiter', name: 'Jupiter', type: 'Gas Giant',
     texture: 'textures/jupiter.jpg', color: 0xd8ca9d,
-    radiusEarth: 11.21, axialTilt: 3.13, rotationHours: 9.925,
+    radiusEarth: 11.21, axialTilt: 3.13, pole: { ra: 268.057, dec: 64.495 }, rotationHours: 9.925,
     a: 5.20288700, e: 0.04838624, i: 1.30439695,
     om: 100.47390909, wbar: 14.72847983, L0: 34.39644051, periodDays: 4332.589,
     description:
@@ -474,7 +474,7 @@ export const PLANETS = [
   {
     id: 'saturn', name: 'Saturn', type: 'Gas Giant',
     texture: 'textures/saturn.jpg', color: 0xe3d9a6,
-    radiusEarth: 9.45, axialTilt: 26.73, rotationHours: 10.656,
+    radiusEarth: 9.45, axialTilt: 26.73, pole: { ra: 40.589, dec: 83.537 }, rotationHours: 10.656,
     ring: { inner: 1.2, outer: 2.3, texture: 'textures/saturn_ring.png' },
     a: 9.53667594, e: 0.05386179, i: 2.48599187,
     om: 113.66242448, wbar: 92.59887831, L0: 49.95424423, periodDays: 10759.22,
@@ -510,7 +510,7 @@ export const PLANETS = [
     id: 'uranus', name: 'Uranus', type: 'Ice Giant',
     texture: 'textures/uranus.jpg', color: 0xa6e1e6,
     ring: { inner: 1.5, outer: 2.0, color: 0x9fb6c2, opacity: 0.35 },
-    radiusEarth: 4.01, axialTilt: 97.77, rotationHours: -17.24,
+    radiusEarth: 4.01, axialTilt: 97.77, pole: { ra: 257.311, dec: -15.175 }, rotationHours: -17.24,
     a: 19.18916464, e: 0.04725744, i: 0.77263783,
     om: 74.01692503, wbar: 170.95427630, L0: 313.23810451, periodDays: 30688.5,
     description:
@@ -544,7 +544,7 @@ export const PLANETS = [
   {
     id: 'neptune', name: 'Neptune', type: 'Ice Giant',
     texture: 'textures/neptune.jpg', color: 0x3b5bdb,
-    radiusEarth: 3.88, axialTilt: 28.32, rotationHours: 16.11,
+    radiusEarth: 3.88, axialTilt: 28.32, pole: { ra: 299.36, dec: 43.46 }, rotationHours: 16.11,
     a: 30.06992276, e: 0.00859048, i: 1.77004347,
     om: 131.78422574, wbar: 44.96476227, L0: -55.12002969, periodDays: 60182,
     description:
@@ -579,7 +579,7 @@ export const PLANETS = [
   {
     id: 'pluto', name: 'Pluto', type: 'Dwarf Planet',
     texture: 'textures/pluto.jpg', color: 0xccb7a3,   // NASA/New Horizons global colour map (PIA11707)
-    radiusEarth: 0.186, axialTilt: 122.53, rotationHours: -153.29,
+    radiusEarth: 0.186, axialTilt: 122.53, pole: { ra: 132.993, dec: -6.163 }, rotationHours: 153.29,
     a: 39.48211675, e: 0.24882730, i: 17.14001206,
     om: 110.30393684, wbar: 224.06891629, L0: 238.92903833, periodDays: 90560,
     isDwarf: true,
@@ -757,7 +757,7 @@ export const PLANETS = [
 // used for the true-scale views. Period in Earth days.
 export const MOONS = [
   { id: 'moon', name: 'Moon', parent: 'earth', texture: 'textures/moon.jpg',
-    radiusEarth: 0.273, dist: 4.0, aKm: 384400, periodDays: 27.32, tilt: 6.68, color: 0xbbbbbb,
+    radiusEarth: 0.273, dist: 4.0, aKm: 384400, periodDays: 27.32, tilt: 5.145, color: 0xbbbbbb,
     info: { 'Diameter': '3,474 km', 'Distance from Earth': '384,400 km',
       'Orbital period': '27.3 days', 'Surface gravity': '1.62 m/s²',
       'Surface temp.': '-173 °C to 127 °C' },

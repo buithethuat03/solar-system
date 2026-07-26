@@ -6,7 +6,7 @@
 //  * Timeline scrubber, live phase readout, and detailed English descriptions.
 // ============================================================================
 import * as THREE from 'three';
-import { resolveTexture, highResTexture, makeEarthMaterial, makeAtmosphere } from './bodies.js';
+import { resolveTexture, makeEarthMaterial, makeAtmosphere } from './bodies.js';
 import { t as tr } from './i18n.js';
 
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -251,15 +251,17 @@ export function createEclipse(ctx) {
 
   // Earth: same self-lit day/night shader as the main scene (city lights on the
   // night side, terminator, ocean glint) + a fresnel atmosphere rim.
-  const dayT = loader.load(highResTexture('textures/earth_day.jpg')); dayT.colorSpace = SRGB;
-  const nightT = loader.load(highResTexture('textures/earth_night.jpg')); nightT.colorSpace = SRGB;
-  const specT = loader.load(highResTexture('textures/earth_specular.png')); specT.colorSpace = THREE.NoColorSpace;
+  // Follow the 2K/8K texture setting (and share URLs with the main scene so
+  // THREE.Cache dedupes the downloads).
+  const dayT = loader.load(resolveTexture('textures/earth_day.jpg')); dayT.colorSpace = SRGB;
+  const nightT = loader.load(resolveTexture('textures/earth_night.jpg')); nightT.colorSpace = SRGB;
+  const specT = loader.load(resolveTexture('textures/earth_specular.png')); specT.colorSpace = THREE.NoColorSpace;
   const earthMat = makeEarthMaterial(dayT, nightT, specT);
   earthMat.uniforms.sunDir.value.set(-1, 0, 0);   // rig Sun sits at -X, fixed
   const earth = new THREE.Mesh(new THREE.SphereGeometry(EARTH_R, 64, 64), earthMat);
   rig.add(earth);
   earth.add(makeAtmosphere(EARTH_R * 1.06, 0x5aa0ff, 3.2, 0.9));
-  const cloudTex = loader.load(highResTexture('textures/earth_clouds.jpg'));
+  const cloudTex = loader.load(resolveTexture('textures/earth_clouds.jpg'));
   const clouds = new THREE.Mesh(new THREE.SphereGeometry(EARTH_R * 1.015, 48, 48),
     new THREE.MeshStandardMaterial({ alphaMap: cloudTex, transparent: true, color: 0xffffff, depthWrite: false, opacity: 0.85 }));
   earth.add(clouds);

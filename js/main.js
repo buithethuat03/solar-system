@@ -23,6 +23,9 @@ import { t, applyBodyTranslations, applyStaticTranslations, MONTHS } from './i18
 //  Renderer / scene / camera
 // ---------------------------------------------------------------------------
 const canvas = document.getElementById('scene');
+// Deduplicate identical texture URLs across modules (the eclipse rig shares
+// Earth's maps with the main scene; without the cache they downloaded twice).
+THREE.Cache.enabled = true;
 // logarithmicDepthBuffer: the true-scale view spans an enormous dynamic range —
 // from a sub-unit moon up close out to bodies millions of units away — which a
 // linear depth buffer cannot resolve without severe z-fighting. The log buffer
@@ -132,7 +135,9 @@ bloomLayer.set(BLOOM_LAYER);
 const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
 const savedMaterials = {};
 function darkenNonBloomed(obj) {
-  if ((obj.isMesh || obj.isPoints || obj.isSprite) && bloomLayer.test(obj.layers) === false) {
+  // isLine matters: orbit lines and additive trails otherwise keep their bright
+  // materials in the bloom pass and glow (the Sun trail sits above threshold).
+  if ((obj.isMesh || obj.isPoints || obj.isSprite || obj.isLine) && bloomLayer.test(obj.layers) === false) {
     savedMaterials[obj.uuid] = obj.material;
     obj.material = darkMaterial;
   }
