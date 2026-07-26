@@ -7,6 +7,7 @@
 // ============================================================================
 import * as THREE from 'three';
 import { resolveTexture, makeEarthMaterial, makeAtmosphere } from './bodies.js';
+import { solarEventGeometry, lunarEventGeometry, nextEclipse, isoToSimDays } from './eclipse_math.js';
 import { t as tr } from './i18n.js';
 
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -207,7 +208,7 @@ const _n1 = makeNoise1D(11), _n2 = makeNoise1D(29), _n3 = makeNoise1D(53);
 const fbmA = (x) => 0.55 * _n1(x) + 0.30 * _n2(x * 2) + 0.15 * _n3(x * 4);
 
 export function createEclipse(ctx) {
-  const { scene, camera, controls, onEnter, onExit } = ctx;
+  const { scene, camera, controls, onEnter, onExit, getSimDays, setSimDays } = ctx;
   const loader = new THREE.TextureLoader();
   const SRGB = THREE.SRGBColorSpace;
 
@@ -363,6 +364,13 @@ export function createEclipse(ctx) {
         <input type="range" id="ecl-scrub" min="0" max="1000" value="0" />
         <div class="ecl-time-readout"><span id="ecl-clock">${tr('eclTimeline')}</span></div>
       </div>
+      <div id="ecl-events" class="ecl-events">
+        <button id="ecl-prev" class="round-btn" title="${tr('eclEvPrev')}">◀</button>
+        <button id="ecl-pick" class="ecl-pick" title="${tr('eclEvGo')}">
+          <b id="ecl-ev-label">—</b><small id="ecl-ev-sub">${tr('eclEvDemo')}</small>
+        </button>
+        <button id="ecl-next" class="round-btn" title="${tr('eclEvNext')}">▶</button>
+      </div>
       <div id="ecl-seg" class="ecl-seg">
         <button data-m="total" class="active">${tr('eclModeTotal')}</button>
         <button data-m="annular">${tr('eclModeAnnular')}</button>
@@ -378,6 +386,67 @@ export function createEclipse(ctx) {
   const phaseName = $('ecl-phase-name');
   const phasePct = $('ecl-phase-pct');
   const seg = $('ecl-seg');
+  const evPrevBtn = $('ecl-prev');
+  const evNextBtn = $('ecl-next');
+  const evPickBtn = $('ecl-pick');
+  const evLabel = $('ecl-ev-label');
+  const evSub = $('ecl-ev-sub');
+
+  // ---- Real catalog events (NASA GSFC canon; geometry from the app's own
+  // ephemerides). Demo mode stays the didactic default; picking an event
+  // parameterizes the POV with its true class/magnitude/chord and maps the
+  // timeline onto the real contact window.
+  let currentEvent = null;   // highlighted in the strip
+  let eventMode = null;      // the event actively driving the POV (or null)
+  let eventGeom = null;
+  const KIND_KEY = { T: 'eclKindT', A: 'eclKindA', H: 'eclKindH', P: 'eclKindP', N: 'eclKindN' };
+  const simDaysToUTCString = (sd) =>
+    new Date((sd + 10957.5) * 86400000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+
+  function refreshEventStrip() {
+    if (!currentEvent) return;
+    const kindName = tr(KIND_KEY[currentEvent.k] || 'eclKindP');
+    evLabel.textContent = `${currentEvent.d.slice(0, 10)} \u00b7 ${kindName} \u00b7 Saros ${currentEvent.s}`;
+    evSub.textContent = eventMode
+      ? `${tr('eclEvNote')} \u00b7 \u03b3 ${currentEvent.g.toFixed(3)} \u00b7 m ${currentEvent.m.toFixed(3)}`
+      : tr('eclEvDemo');
+    evPickBtn.classList.toggle('active', !!eventMode);
+    seg.classList.toggle('disabled', !!eventMode);
+  }
+
+  function stepEvent(dir) {
+    const from = currentEvent
+      ? isoToSimDays(currentEvent.d) + dir * 0.5
+      : (getSimDays ? getSimDays() : 0);
+    const next = nextEclipse(from, dir, type === 'solar' ? 'S' : 'L');
+    if (next) {
+      currentEvent = next;
+      if (eventMode) activateEvent(next);
+      else refreshEventStrip();
+    }
+  }
+
+  function activateEvent(ev) {
+    eventMode = ev;
+    eventGeom = ev.t === 'S' ? solarEventGeometry(ev) : lunarEventGeometry(ev);
+    if (setSimDays) setSimDays(isoToSimDays(ev.d));   // orrery shows the real alignment
+    t = 0.5; playing = true; scrub.value = 500;
+    refreshEventStrip();
+    if (active) { updateRig(); drawPOV(); updatePhase(); }
+  }
+
+  function deactivateEvent() {
+    eventMode = null;
+    eventGeom = null;
+    refreshEventStrip();
+  }
+
+  evPrevBtn.addEventListener('click', () => stepEvent(-1));
+  evNextBtn.addEventListener('click', () => stepEvent(1));
+  evPickBtn.addEventListener('click', () => {
+    if (eventMode) deactivateEvent();
+    else if (currentEvent) activateEvent(currentEvent);
+  });
 
   // ----------------------------------------------------------- POV starfields
   function makeStars(n) {
@@ -665,6 +734,10 @@ export function createEclipse(ctx) {
     $('ecl-type').textContent = tr(DESCRIPTION_KEYS[kind].type);
     $('ecl-desc').innerHTML = tr(DESCRIPTION_KEYS[kind].html);
     rig.visible = true;
+    deactivateEvent();
+    currentEvent = nextEclipse(getSimDays ? getSimDays() : 0, 1, kind === 'solar' ? 'S' : 'L');
+    refreshEventStrip();
+    $('ecl-clock').textContent = tr('eclTimeline');
     buildShadow(kind);
     buildOrbits(kind);
     saved.pos.copy(camera.position); saved.tgt.copy(controls.target);
@@ -735,6 +808,20 @@ export function createEclipse(ctx) {
   function solarGeom() {
     const cx = cw / 2, cy = ch * 0.40;   // higher up → room for the glare below
     const R = Math.min(cw, ch) * 0.155;
+    if (eventMode && eventMode.t === 'S') {
+      // Real event: apparent-size ratio, chord slope and minimum separation
+      // come from the ephemeris — the class (total/annular/partial) EMERGES
+      // from the geometry instead of the demo toggle.
+      const rMe = eventGeom.k * R;
+      const maxSepE = R + rMe;
+      const offE = (2 * t - 1) * maxSepE * 1.02;
+      const slope = eventGeom.slope;
+      const intercept = eventGeom.sepMinFrac * R * Math.sqrt(1 + slope * slope)
+        * Math.sign(eventMode.g || 1);
+      const mxE = cx + offE, myE = cy + offE * slope + intercept;
+      return { cx, cy, R, rM: rMe, mx: mxE, my: myE,
+               sep: Math.hypot(mxE - cx, myE - cy), maxSep: maxSepE };
+    }
     const rM = (annular ? 0.9 : 1.06) * R;
     const maxSep = R + rM;
     const off = (2 * t - 1) * maxSep * 1.02;
@@ -745,6 +832,18 @@ export function createEclipse(ctx) {
   function lunarGeom() {
     const cx = cw / 2, cy = ch * 0.45;
     const R = Math.min(cw, ch) * 0.135;
+    if (eventMode && eventMode.t === 'L') {
+      // Real shadow radii (Danjon 1.02 enlargement) and the true impact
+      // parameter from the catalog gamma replace the hardcoded 2.6/4.9.
+      const umbraRe = R * eventGeom.umbraFrac;
+      const penumbraRe = R * eventGeom.penumbraFrac;
+      const travelE = penumbraRe + R;
+      const offE = (2 * t - 1) * travelE;
+      const syE = cy + eventGeom.dMinFrac * R * Math.sign(eventMode.g || 1);
+      const sxE = cx + offE;
+      return { cx, cy, R, umbraR: umbraRe, penumbraR: penumbraRe,
+               sx: sxE, sy: syE, d: Math.hypot(sxE - cx, syE - cy) };
+    }
     const umbraR = R * 2.6, penumbraR = R * 4.9;
     const travel = penumbraR + R;
     const sx = cx + (2 * t - 1) * travel, sy = cy + (2 * t - 1) * R * 0.22;
@@ -1269,6 +1368,7 @@ export function createEclipse(ctx) {
   });
   scrub.addEventListener('input', () => { t = +scrub.value / 1000; playing = false; refreshPlay(); updateRig(); drawPOV(); updatePhase(); });
   seg.addEventListener('click', (e) => {
+    if (eventMode) return;   // the real event's geometry decides the class
     const b = e.target.closest('button[data-m]'); if (!b) return;
     annular = b.dataset.m === 'annular';
     seg.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
@@ -1283,6 +1383,12 @@ export function createEclipse(ctx) {
     if (!active) return;
     clock += dt;
     if (playing) { t += dt / DURATION; if (t > 1) t -= 1; scrub.value = Math.round(t * 1000); }
+    if (eventMode && eventGeom) {
+      const pad = 10 / 1440;
+      const t0 = (eventMode.t === 'S' ? eventGeom.tC1 : eventGeom.tP1) - pad;
+      const t1 = (eventMode.t === 'S' ? eventGeom.tC4 : eventGeom.tP4) + pad;
+      $('ecl-clock').textContent = simDaysToUTCString(t0 + t * (t1 - t0));
+    }
     updateRig();
     drawPOV();
     updatePhase();

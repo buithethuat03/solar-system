@@ -543,6 +543,11 @@ if (creditsEl) creditsEl.textContent = t('credits');
 // ---------------------------------------------------------------------------
 const eclipse = createEclipse({
   scene, camera, controls,
+  getSimDays: () => state.simDays,
+  // Jumping to a real catalog event also aims the master clock at it, so the
+  // orrery shows the true Sun–Moon–Earth alignment on exit. Pause: the moment
+  // should not drift away while the user studies it.
+  setSimDays: (d) => { state.simDays = d; state.paused = true; ui.setPaused(true); },
   onEnter: () => { stopFollow(); setOrreryVisible(false); },
   onExit: () => { setOrreryVisible(true); },
 });
