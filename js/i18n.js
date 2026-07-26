@@ -7,7 +7,11 @@
 // ============================================================================
 import { BODIES_VI } from './i18n.bodies.js';
 
-export const LANG = (localStorage.getItem('solar.lang') === 'vi') ? 'vi' : 'en';
+// localStorage is absent under Node — the test suites import this module.
+const storedLang = (typeof localStorage !== 'undefined')
+  ? localStorage.getItem('solar.lang')
+  : null;
+export const LANG = (storedLang === 'vi') ? 'vi' : 'en';
 
 // ---- UI strings ------------------------------------------------------------
 const STRINGS = {

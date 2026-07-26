@@ -1,0 +1,21 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Node checks
+        run: |
+          set -e
+          for f in tools/test_*.mjs; do
+            echo "== $f"
+            node "$f"
+          done
+      - name: Python syntax
+        run: python -m compileall server.py tools/fetch_voyager_ephem.py

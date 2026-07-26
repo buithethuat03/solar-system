@@ -7,13 +7,36 @@ import { deriveBlackHoleSystem } from './blackhole-physics.js';
 
 const $ = (id) => document.getElementById(id);
 
-function fmtDate(d) {
+// Pure helpers live at module scope (and are exported) so the Node test
+// suite can exercise them without a DOM.
+export function safeSourceHref(source, base = (typeof document !== 'undefined'
+  ? document.baseURI
+  : 'https://example.invalid/')) {
+  let candidate = '';
+  if (typeof source === 'string') {
+    if (/^https?:\/\//i.test(source.trim())) candidate = source.trim();
+  } else {
+    candidate = source.url ?? source.href ?? source.link ?? '';
+    if (!candidate && typeof source.doi === 'string' && /^10\.\d{4,9}\//.test(source.doi)) {
+      candidate = `https://doi.org/${source.doi}`;
+    }
+  }
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate, base);
+    return (url.protocol === 'https:' || url.protocol === 'http:') ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+export function fmtDate(d) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${DAYS[d.getUTCDay()]}, ${pad(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} · ` +
          `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
 }
 
-function fmtSpeed(v) {
+export function fmtSpeed(v) {
   const av = Math.abs(v);
   if (av * 86400 < 120) return t('realtime');
   if (av < 1) return (av * 24).toFixed(1) + ' ' + t('unitHr');
@@ -24,10 +47,10 @@ function fmtSpeed(v) {
 }
 
 // Logarithmic speed slider mapping (slider 0..1000  <->  days/sec).
-const MIN_SPEED = 1 / 86400;     // ~ real-time
-const MAX_SPEED = 3650;          // ~ 10 years / second
-const sliderToSpeed = (t) => MIN_SPEED * Math.pow(MAX_SPEED / MIN_SPEED, t / 1000);
-const speedToSlider = (v) => 1000 * Math.log(v / MIN_SPEED) / Math.log(MAX_SPEED / MIN_SPEED);
+export const MIN_SPEED = 1 / 86400;     // ~ real-time
+export const MAX_SPEED = 3650;          // ~ 10 years / second
+export const sliderToSpeed = (t) => MIN_SPEED * Math.pow(MAX_SPEED / MIN_SPEED, t / 1000);
+export const speedToSlider = (v) => 1000 * Math.log(v / MIN_SPEED) / Math.log(MAX_SPEED / MIN_SPEED);
 
 const PRESETS = [
   { label: t('preRealtime'), days: MIN_SPEED },
@@ -278,25 +301,6 @@ export function initUI(controller) {
     const unit = raw.unit ? (units[raw.unit] ?? raw.unit) : '';
     if (unit) text += unit === '°' ? unit : ` ${unit}`;
     return { text, provenance };
-  }
-
-  function safeSourceHref(source) {
-    let candidate = '';
-    if (typeof source === 'string') {
-      if (/^https?:\/\//i.test(source.trim())) candidate = source.trim();
-    } else {
-      candidate = source.url ?? source.href ?? source.link ?? '';
-      if (!candidate && typeof source.doi === 'string' && /^10\.\d{4,9}\//.test(source.doi)) {
-        candidate = `https://doi.org/${source.doi}`;
-      }
-    }
-    if (!candidate) return '';
-    try {
-      const url = new URL(candidate, document.baseURI);
-      return (url.protocol === 'https:' || url.protocol === 'http:') ? url.href : '';
-    } catch {
-      return '';
-    }
   }
 
   function blackHoleInfo(ref) {

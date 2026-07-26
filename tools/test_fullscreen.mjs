@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { bindFullscreenToggle } from '../js/fullscreen.js';
 
+// Counted wrappers so the final summary reflects reality instead of a literal.
+let passed = 0;
+const eq = (actual, expected, message) => { assert.equal(actual, expected, message); passed++; };
+const deepEq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); passed++; };
+
 class EventTargetMock {
   listeners = new Map();
 
@@ -61,18 +66,18 @@ console.log('Fullscreen UI tests');
     document: doc, root, body, beforeEnter: () => { beforeEnterCalls++; },
   });
 
-  assert.equal(toggle.checked, false, 'starts outside fullscreen');
+  eq(toggle.checked, false, 'starts outside fullscreen');
   toggle.checked = true;
   await toggle.dispatch('change');
-  assert.equal(doc.fullscreenElement, root, 'requests fullscreen for the page root');
-  assert.equal(body.classList.contains('fullscreen-mode'), true, 'hides the UI in fullscreen');
-  assert.equal(beforeEnterCalls, 1, 'closes the View popover before entering');
+  eq(doc.fullscreenElement, root, 'requests fullscreen for the page root');
+  eq(body.classList.contains('fullscreen-mode'), true, 'hides the UI in fullscreen');
+  eq(beforeEnterCalls, 1, 'closes the View popover before entering');
 
   doc.fullscreenElement = null;
   await doc.dispatch('fullscreenchange');
-  assert.equal(toggle.checked, false, 'syncs when Esc exits browser fullscreen');
-  assert.equal(body.classList.contains('fullscreen-mode'), false, 'restores the UI after exit');
-  assert.deepEqual(settings, snapshot, 'does not mutate existing View settings');
+  eq(toggle.checked, false, 'syncs when Esc exits browser fullscreen');
+  eq(body.classList.contains('fullscreen-mode'), false, 'restores the UI after exit');
+  deepEq(settings, snapshot, 'does not mutate existing View settings');
   cleanup();
 }
 
@@ -84,8 +89,8 @@ console.log('Fullscreen UI tests');
   toggle.checked = true;
   await toggle.dispatch('change');
   console.warn = originalWarn;
-  assert.equal(toggle.checked, false, 'reverts the toggle when fullscreen is blocked');
-  assert.equal(body.classList.contains('fullscreen-mode'), false, 'keeps the UI visible on failure');
+  eq(toggle.checked, false, 'reverts the toggle when fullscreen is blocked');
+  eq(body.classList.contains('fullscreen-mode'), false, 'keeps the UI visible on failure');
 }
 
-console.log('  9 passed, 0 failed');
+console.log(`  ${passed} passed, 0 failed`);
