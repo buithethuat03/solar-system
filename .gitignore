@@ -1,9 +1,10 @@
-# Archives & scratch notes
-*.zip
-verify_selectors.txt
 
+# Archives & scratch notes
 # OS / editor cruft
+*.zip
 .DS_Store
-Thumbs.db
 .vscode/
+Thumbs.db
+__pycache__/
 node_modules/
+verify_selectors.txt
