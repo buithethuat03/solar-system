@@ -11,6 +11,7 @@ import {
   MAX_SPEED,
 } from '../js/ui.js';
 import { t } from '../js/i18n.js';
+import { parseHash, serializeState } from '../js/permalink.js';
 
 let passed = 0;
 
@@ -75,6 +76,43 @@ check('fmtSpeed picks the documented unit branches', () => {
   assert.ok(fmtSpeed(699).endsWith(t('unitMonths')), 'under 700 in months');
   assert.ok(fmtSpeed(700).endsWith(t('unitYr')), '700 flips to years');
   assert.ok(fmtSpeed(-700).endsWith(t('unitYr')), 'reverse playback uses magnitude');
+});
+
+check('permalink hash round-trips the shareable state', () => {
+  const state = {
+    simDays: Date.parse('2027-08-02T12:00:00Z') / 86400000 - 10957.5,
+    distanceMode: 'realistic',
+    speed: 30.44,
+    paused: true,
+    showOrbits: true, showLabels: false, showMoons: true, showDwarfs: false,
+    showSpacecraft: true, showBlackHoles: false, showBelts: true, bloom: true,
+  };
+  const parsed = parseHash('#' + serializeState(state, 'saturn'));
+  assert.equal(parsed.body, 'saturn');
+  assert.equal(parsed.date, '2027-08-02');
+  assert.equal(parsed.mode, 'realistic');
+  assert.equal(parsed.paused, true);
+  relativeClose(parsed.speed, 30.44, 1e-3, 'speed survives the round-trip');
+  assert.deepEqual(parsed.layers, {
+    showOrbits: true, showLabels: false, showMoons: true, showDwarfs: false,
+    showSpacecraft: true, showBlackHoles: false, showBelts: true, bloom: true,
+  });
+});
+
+check('parseHash rejects malformed or hostile values', () => {
+  assert.deepEqual(parseHash(''), {});
+  assert.deepEqual(parseHash('#'), {});
+  const bad = parseHash('#b=<img src=x>&d=2027-99-99&m=z&l=xyz&s=-5&p=2');
+  assert.equal(bad.body, undefined, 'body must match the id charset');
+  assert.equal(bad.date, undefined, 'impossible dates are dropped');
+  assert.equal(bad.mode, undefined, 'unknown mode codes are dropped');
+  assert.equal(bad.layers, undefined, 'unknown layer flags are dropped');
+  assert.equal(bad.speed, undefined, 'negative speeds are dropped');
+  assert.equal(bad.paused, undefined, 'paused only accepts 1');
+  const huge = parseHash('#s=999999');
+  assert.equal(huge.speed, undefined, 'speeds beyond the slider cap are dropped');
+  const dbg = parseHash('#dbg=1');
+  assert.equal(dbg.debug, true, 'dbg=1 enables debug');
 });
 
 console.log(`\n  ${passed} passed, 0 failed`);

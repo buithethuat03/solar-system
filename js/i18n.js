@@ -149,6 +149,10 @@ const STRINGS = {
     eclEvGo: 'Show this real eclipse (sets the simulation date)',
     eclEvDemo: 'Real eclipses 2001–2050 · click to load',
     eclEvNote: 'Geocentric approximation (±10 min)',
+    searchPlaceholder: 'Search bodies…  ( / )',
+    share: 'Share', shareTitle: 'Copy a link to this exact view',
+    shareCopied: 'Link copied ✓', shareFailed: 'Copy failed — link shown in address bar',
+    screenshot: 'Screenshot', screenshotTitle: 'Save an image of the current view',
     eclKindT: 'Total', eclKindA: 'Annular', eclKindH: 'Hybrid',
     eclKindP: 'Partial', eclKindN: 'Penumbral',
     bhExposure: 'Exposure', bhUpscaleCrisp: 'Crisp upscale (nearest-neighbour)',
@@ -336,6 +340,10 @@ const STRINGS = {
     eclEvGo: 'Xem lần thực có thật này (đặt ngày mô phỏng)',
     eclEvDemo: 'Nhật/nguyệt thực thực tế 2001–2050 · bấm để nạp',
     eclEvNote: 'Xấp xỉ địa tâm (±10 phút)',
+    searchPlaceholder: 'Tìm thiên thể…  ( / )',
+    share: 'Chia sẻ', shareTitle: 'Sao chép liên kết đúng khung nhìn này',
+    shareCopied: 'Đã sao chép liên kết ✓', shareFailed: 'Sao chép lỗi — liên kết đang ở thanh địa chỉ',
+    screenshot: 'Ảnh chụp', screenshotTitle: 'Lưu ảnh khung nhìn hiện tại',
     eclKindT: 'Toàn phần', eclKindA: 'Hình khuyên', eclKindH: 'Lai',
     eclKindP: 'Một phần', eclKindN: 'Nửa tối',
     bhExposure: 'Phơi sáng', bhUpscaleCrisp: 'Phóng to sắc nét (nearest-neighbour)',
@@ -452,7 +460,7 @@ export function applyBodyTranslations(sun, planets = [], moons = [], voyagers = 
   if (LANG !== 'vi') return;
   const all = [sun, ...planets, ...moons, ...voyagers, ...blackHoles].filter(Boolean);
   for (const b of all) {
-    if (NAMES[b.id]) b.name = NAMES[b.id];
+    if (NAMES[b.id]) { b.nameEn = b.nameEn ?? b.name; b.name = NAMES[b.id]; }
     const tr = BODIES_VI[b.id];
     if (b.type && tr && tr.type) b.type = tr.type;
     else if (b.type && TYPES[b.type]) b.type = TYPES[b.type];

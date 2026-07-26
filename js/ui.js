@@ -74,6 +74,43 @@ export function initUI(controller) {
     list.appendChild(h);
     return h;
   }
+  // Type-ahead filter over the navigator. Matches the localized name, the
+  // English name (kept by applyBodyTranslations) and the id, so both
+  // "Sao Kim" and "Venus" find the same row under either language.
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.id = 'nav-search';
+  searchInput.placeholder = t('searchPlaceholder');
+  searchInput.setAttribute('aria-label', t('searchPlaceholder'));
+  $('nav-panel').querySelector('.panel-head')?.after(searchInput);
+  function applySearch() {
+    const q = searchInput.value.trim().toLowerCase();
+    let group = null;
+    let groupHasHit = false;
+    const flushGroup = () => { if (group) group.hidden = !groupHasHit && q !== ''; };
+    for (const el of list.children) {
+      if (el.classList.contains('nav-group')) {
+        flushGroup();
+        group = el; groupHasHit = false;
+        continue;
+      }
+      const hit = q === '' || (el.dataset.search ?? '').includes(q);
+      el.hidden = !hit;
+      if (hit) groupHasHit = true;
+    }
+    flushGroup();
+  }
+  searchInput.addEventListener('input', applySearch);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const first = list.querySelector('.nav-item:not([hidden])');
+      if (first) controller.focusById(first.dataset.id);
+    } else if (e.key === 'Escape') {
+      searchInput.value = ''; applySearch(); searchInput.blur();
+      e.stopPropagation();
+    }
+  });
+
   function addItem(body, kind, cls) {
     const item = document.createElement('button');
     item.className = 'nav-item ' + (cls || '');
@@ -85,6 +122,7 @@ export function initUI(controller) {
     const name = document.createElement('span');
     name.textContent = body.name;
     item.append(dot, name);
+    item.dataset.search = [body.name, body.nameEn ?? '', body.id].join(' ').toLowerCase();
     item.addEventListener('click', () => controller.focusById(body.id));
     list.appendChild(item);
     return item;
@@ -427,6 +465,15 @@ export function initUI(controller) {
     $('info-panel').appendChild(section);
   }
 
+  function syncToggle(id, value) {
+    const el = $(id);
+    if (el) el.checked = value;
+  }
+  function refreshSpeedUi() {
+    slider.value = Math.max(0, Math.min(1000, speedToSlider(s.speed)));
+    readout.textContent = (s.direction === -1 ? '◄ ' : '') + fmtSpeed(s.speed);
+  }
+
   return {
     showInfo(ref, kind) {
       const typeLabel = ref.type || (kind === 'moon' ? t('typeMoon') : kind === 'sun' ? t('typeStar') : kind === 'black-hole' ? t('typeBlackHole') : '');
@@ -505,5 +552,8 @@ export function initUI(controller) {
       const fol = $('hud-follow');
       if (fol) { fol.textContent = who ? '⌖ ' + t('following') + ' ' + who : ''; fol.style.display = who ? '' : 'none'; }
     },
+
+    syncToggle,
+    refreshSpeedUi,
   };
 }

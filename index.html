@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>3D Solar System — Interactive Orrery</title>
   <meta name="description" content="An interactive, scientifically grounded 3D model of the Solar System built with three.js." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CradialGradient id='g' cx='40%25' cy='38%25' r='65%25'%3E%3Cstop offset='0' stop-color='%23fff6d6'/%3E%3Cstop offset='0.5' stop-color='%23ffb43c'/%3E%3Cstop offset='1' stop-color='%23ff6a00'/%3E%3C/radialGradient%3E%3Ccircle cx='16' cy='16' r='11' fill='url(%23g)'/%3E%3C/svg%3E" />
@@ -49,13 +49,15 @@
       <span id="hud-fps"></span>
       <button id="btn-eclipse" class="ghost-btn" title="Eclipse views">🌒 Eclipses</button>
       <button id="btn-view" class="ghost-btn" title="View options">⚙ View</button>
+      <button id="btn-share" class="ghost-btn" title="Share">🔗</button>
+      <button id="btn-shot" class="ghost-btn" title="Screenshot">📷</button>
       <button id="btn-help" class="ghost-btn" title="Help">? Help</button>
       <button id="btn-reset-view" class="ghost-btn" title="Reset camera">⟲ Reset view</button>
     </div>
   </header>
 
   <!-- Left: body navigator -->
-  <aside id="nav-panel">
+  <aside id="nav-panel" aria-label="Body navigator">
     <div class="panel-head">
       <span>EXPLORE</span>
       <button id="btn-nav-toggle" class="icon-btn" title="Collapse">≡</button>
@@ -113,7 +115,7 @@
   </aside>
 
   <!-- Right: info panel -->
-  <aside id="info-panel" class="hidden">
+  <aside id="info-panel" class="hidden" role="region" aria-live="polite" aria-labelledby="info-name">
     <div class="info-head">
       <div class="info-titles">
         <h2 id="info-name">—</h2>
@@ -156,10 +158,10 @@
   </footer>
 
   <!-- Help panel -->
-  <div id="help-panel" class="hidden">
+  <div id="help-panel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
     <div class="help-card">
-      <button id="btn-help-close" class="icon-btn close">✕</button>
-      <h2>How to use</h2>
+      <button id="btn-help-close" class="icon-btn close" aria-label="Close">✕</button>
+      <h2 id="help-title">How to use</h2>
       <ul>
         <li><b>Rotate:</b> click-drag with the left mouse button (one finger on touch).</li>
         <li><b>Zoom:</b> scroll wheel, or <b>pinch with two fingers</b> on touch.</li>

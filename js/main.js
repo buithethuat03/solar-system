@@ -13,6 +13,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildSolarSystem } from './bodies.js';
 import { daysSinceJ2000, j2000DaysToDate, voyagerState } from './kepler.js';
 import { initUI } from './ui.js';
+import { loadPrefs, savePref } from './prefs.js';
+import { parseHash, serializeState, scheduleHashWrite } from './permalink.js';
 import { createEclipse } from './eclipse.js';
 import { createBlackHoleView } from './blackhole.js';
 import { equatorialToSceneDirection, interstellarScenePosition } from './blackhole-physics.js';
@@ -97,23 +99,39 @@ const loader = new THREE.TextureLoader(manager);
 // ---------------------------------------------------------------------------
 //  Simulation state
 // ---------------------------------------------------------------------------
+// Persisted view settings and (winning over them) a shared-link hash state.
+// Applying a link never writes prefs — a recipient's saved setup survives.
+const savedPrefs = loadPrefs();
+const linkState = parseHash(window.location.hash);
+const boot = (key, fallback) =>
+  linkState.layers?.[key] ?? savedPrefs[key] ?? fallback;
 const state = {
-  paused: false,
-  speed: 1 / 86400,    // simulated days per real second (magnitude) — default real-time
-  direction: 1,        // +1 forward, -1 reverse
-  simDays: daysSinceJ2000(new Date()),
-  showOrbits: true,
-  showLabels: true,
-  showBelts: true,
-  showMoons: true,
-  showDwarfs: true,
-  showSpacecraft: true,
-  showBlackHoles: true,
-  distanceMode: 'visual',
-  bloom: true,
+  paused: linkState.paused ?? savedPrefs.paused ?? false,
+  speed: linkState.speed ?? savedPrefs.speed ?? 1 / 86400,
+  direction: savedPrefs.direction ?? 1,
+  simDays: linkState.date
+    ? Date.parse(linkState.date + 'T12:00:00Z') / 86400000 - 10957.5
+    : daysSinceJ2000(new Date()),
+  showOrbits: boot('showOrbits', true),
+  showLabels: boot('showLabels', true),
+  showBelts: boot('showBelts', true),
+  showMoons: boot('showMoons', true),
+  showDwarfs: boot('showDwarfs', true),
+  showSpacecraft: boot('showSpacecraft', true),
+  showBlackHoles: boot('showBlackHoles', true),
+  distanceMode: 'visual',   // applied via controller after init (camera framing)
+  bloom: boot('bloom', true),
   selected: null,      // { kind, ref, object3D }
   following: false,
 };
+const bootDistanceMode = linkState.mode ?? savedPrefs.distanceMode ?? 'visual';
+const bootSelectedId = linkState.body ?? savedPrefs.selectedId ?? null;
+let applyingLink = true;   // suppress pref writes while restoring state
+// Share/persist funnel: every controller mutation lands here once.
+function persistAndShare(key, value) {
+  if (!applyingLink && key) savePref(key, value);
+  scheduleHashWrite(state, state.selected?.ref?.id ?? null);
+}
 
 // ---------------------------------------------------------------------------
 //  Build the solar system
@@ -242,6 +260,7 @@ function onPick(userData, object3D, focus = false) {
   const target = userData.object3D || object3D;
   const ref = (userData.kind === 'spacecraft') ? voyagerLiveRef(userData.ref) : userData.ref;
   state.selected = { kind: userData.kind, ref: userData.ref, object3D: target };
+  persistAndShare('selectedId', userData.ref?.id ?? '');
   ui.showInfo(ref, userData.kind);
   ui.highlight(userData.ref.id);
   if (focus) focusOn(target);
@@ -269,7 +288,9 @@ function selectBlackHole(data, focus = false) {
 // ---------------------------------------------------------------------------
 //  Camera focus & follow
 // ---------------------------------------------------------------------------
-const focusAnim = { active: false, start: 0, dur: 1.1, storedDir: new THREE.Vector3(), storedDist: 0, fromPos: new THREE.Vector3(), toPos: new THREE.Vector3(), fromTgt: new THREE.Vector3(), toTgt: new THREE.Vector3() };
+const REDUCED_MOTION = typeof matchMedia !== 'undefined'
+  && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const focusAnim = { active: false, start: 0, dur: REDUCED_MOTION ? 0.25 : 1.1, storedDir: new THREE.Vector3(), storedDist: 0, fromPos: new THREE.Vector3(), toPos: new THREE.Vector3(), fromTgt: new THREE.Vector3(), toTgt: new THREE.Vector3() };
 const followPrev = new THREE.Vector3();
 let followObj = null;
 const tmpV = new THREE.Vector3();
@@ -427,12 +448,12 @@ let orbitsBeforeAccurate = true;   // remember the Orbit-paths toggle across Acc
 const controller = {
   state,
   bodies: { sun: SUN, planets: PLANETS, moons: MOONS, voyagers: VOYAGERS, blackHoles: BLACK_HOLES },
-  togglePause(p) { state.paused = p; },
-  setSpeed(v) { state.speed = v; },
-  setDirection(d) { state.direction = d; },
+  togglePause(p) { state.paused = p; persistAndShare('paused', p); },
+  setSpeed(v) { state.speed = v; persistAndShare('speed', v); },
+  setDirection(d) { state.direction = d; persistAndShare('direction', d); },
   goToNow() { state.simDays = daysSinceJ2000(new Date()); },
   setDate(date) { state.simDays = daysSinceJ2000(date); },
-  setToggle(key, val) { state[key] = val; applyVisibility(); },
+  setToggle(key, val) { state[key] = val; applyVisibility(); persistAndShare(key, val); },
   setDistanceMode(mode) {
     const wasAccurate = state.distanceMode === 'accurate';
     if (wasAccurate && mode !== 'accurate') {
@@ -484,7 +505,7 @@ const controller = {
       ui.setLive(false, trueScale ? t('distHintRealistic') : '');
     }
   },
-  setBloom(on) { state.bloom = on; },
+  setBloom(on) { state.bloom = on; persistAndShare('bloom', on); },
   selectById(id) {
     const blackHoleData = blackHoleById(id);
     if (blackHoleData) { selectBlackHole(blackHoleData, false); return; }
@@ -533,6 +554,11 @@ function findObjectById(id) {
 }
 
 const ui = initUI(controller);
+// FPS readout is a debug aid — only shown when the link carries dbg=1.
+if (!linkState.debug) {
+  const fpsEl = document.getElementById('hud-fps');
+  if (fpsEl) fpsEl.style.display = 'none';
+}
 applyStaticTranslations();   // translate the static HTML chrome (no-op in English)
 ui.showInfo(SUN, 'sun');   // start by describing the Sun
 const creditsEl = document.getElementById('credits');
@@ -563,7 +589,7 @@ const blackHoleDistanceLabel = Number.isFinite(blackHoleLogical.distanceUncertai
 const interstellarTravel = {
   active: false,
   startedAt: 0,
-  durationMs: 5200,
+  durationMs: REDUCED_MOTION ? 900 : 5200,
   worldOrigin: new THREE.Vector3(),
   cameraStart: new THREE.Vector3(),
   cameraEnd: new THREE.Vector3(),
@@ -757,6 +783,64 @@ document.addEventListener('pointerdown', (e) => {
   }
 }, true);
 
+// ---------------------------------------------------------------------------
+//  Share link & screenshot
+// ---------------------------------------------------------------------------
+// Both live in the topbar, which every special mode (eclipse / black hole /
+// fullscreen) hides — so they only ever act on the plain orrery view.
+const shareBtn = document.getElementById('btn-share');
+if (shareBtn) {
+  shareBtn.title = t('shareTitle');
+  shareBtn.setAttribute('aria-label', t('share'));
+  let shareTimer = null;
+  shareBtn.addEventListener('click', async () => {
+    const hash = '#' + serializeState(state, state.selected?.ref?.id ?? null);
+    window.history.replaceState(null, '', hash);
+    const url = location.origin + location.pathname + hash;
+    let copied = true;
+    try { await navigator.clipboard.writeText(url); } catch { copied = false; }
+    shareBtn.textContent = copied ? t('shareCopied') : t('shareFailed');
+    clearTimeout(shareTimer);
+    shareTimer = setTimeout(() => { shareBtn.textContent = '🔗'; }, 1800);
+  });
+}
+
+const shotBtn = document.getElementById('btn-shot');
+if (shotBtn) {
+  shotBtn.title = t('screenshotTitle');
+  shotBtn.setAttribute('aria-label', t('screenshot'));
+  shotBtn.addEventListener('click', () => {
+    if (blackHole.isActive()) return;
+    // Render on demand right before the copy, so the WebGL back buffer is
+    // guaranteed fresh without keeping preserveDrawingBuffer on all session.
+    renderFrame();
+    const src = renderer.domElement;
+    const out = document.createElement('canvas');
+    out.width = src.width; out.height = src.height;
+    const g = out.getContext('2d');
+    g.drawImage(src, 0, 0);
+    const date = j2000DaysToDate(state.simDays);
+    const caption = `${state.selected?.ref?.name ?? t('brandTitle')} — ` +
+      `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+    const fontPx = Math.max(14, Math.round(out.width / 90));
+    const pad = Math.max(12, Math.round(out.width * 0.012));
+    g.font = `600 ${fontPx}px Inter, system-ui, sans-serif`;
+    g.textBaseline = 'bottom';
+    g.fillStyle = 'rgba(2,6,14,.62)';
+    g.fillRect(pad - 8, out.height - pad - fontPx - 12, g.measureText(caption).width + 16, fontPx + 16);
+    g.fillStyle = '#eaf2ff';
+    g.fillText(caption, pad, out.height - pad - 2);
+    out.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `solar-system-${date.toISOString().slice(0, 10)}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }, 'image/png');
+  });
+}
+
 // Distant-object locator for the actual Float64 catalogue position. At Solar-
 // System scale its 3D geometry is necessarily sub-pixel, so this projected
 // marker remains clickable; focus starts the floating-origin journey to it.
@@ -825,18 +909,48 @@ const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyF',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  // Broad guard: typing fields and editable regions own their keys entirely.
+  if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;
   if (e.code === 'Space') {
+    // A focused button handles Space natively — don't double-fire.
+    if (e.target.closest?.('button')) return;
     e.preventDefault();
     if (eclipse.isActive()) eclipse.togglePlay();
-    else { state.paused = !state.paused; ui.setPaused(state.paused); }
+    else { state.paused = !state.paused; ui.setPaused(state.paused); controller.togglePause(state.paused); }
     return;
   }
   if (e.code === 'Escape') {
+    // Priority: help dialog → popovers → modes → follow.
+    const helpPanel = document.getElementById('help-panel');
+    if (helpPanel && !helpPanel.classList.contains('hidden')) {
+      helpPanel.classList.add('hidden');
+      document.getElementById('btn-help')?.focus();
+      return;
+    }
+    for (const id of ['toggles', 'eclipse-menu']) {
+      const panel = document.getElementById(id);
+      if (panel && !panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+    }
     if (blackHole.isActive()) blackHole.exit();
     else if (eclipse.isActive()) eclipse.exit();
     else stopFollow();
     return;
+  }
+  if (!blackHole.isActive() && !eclipse.isActive()) {
+    if (e.key === '/') {
+      e.preventDefault();
+      document.getElementById('nav-search')?.focus();
+      return;
+    }
+    if (e.key === '?') { document.getElementById('help-panel')?.classList.toggle('hidden'); return; }
+    if (e.code === 'KeyL') { controller.setToggle('showLabels', !state.showLabels); ui.syncToggle?.('tg-labels', state.showLabels); return; }
+    if (e.code === 'KeyO') { controller.setToggle('showOrbits', !state.showOrbits); ui.syncToggle?.('tg-orbits', state.showOrbits); return; }
+    if (e.code === 'KeyM') { controller.setToggle('showMoons', !state.showMoons); ui.syncToggle?.('tg-moons', state.showMoons); return; }
+    if (e.key === '[') { controller.setSpeed(Math.max(1 / 86400, state.speed / 2)); ui.refreshSpeedUi?.(); return; }
+    if (e.key === ']') { controller.setSpeed(Math.min(3650, state.speed * 2)); ui.refreshSpeedUi?.(); return; }
+    if (e.key === ',') { state.simDays -= 1; return; }
+    if (e.key === '.') { state.simDays += 1; return; }
+    if (e.key === '0') { controller.resetView?.(); return; }
   }
   if (MOVE_KEYS.has(e.code)) {
     e.preventDefault();
@@ -988,4 +1102,16 @@ function animate() {
     frames = 0; fpsT = 0;
   }
 }
+// Apply the saved / shared-link boot state now that the UI exists. The
+// distance mode goes through the controller (camera framing, nav, hints)
+// and the select element mirrors it like the black-hole entry path does.
+if (bootDistanceMode !== 'visual') {
+  controller.setDistanceMode(bootDistanceMode);
+  const distanceSelect = document.getElementById('dist-mode');
+  if (distanceSelect) distanceSelect.value = bootDistanceMode;
+}
+if (bootSelectedId) controller.selectById?.(bootSelectedId);
+applyingLink = false;
+scheduleHashWrite(state, state.selected?.ref?.id ?? null);
+
 animate();
