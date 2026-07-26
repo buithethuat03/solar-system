@@ -805,6 +805,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(w, h);
   bloomComposer.setSize(w / 2, h / 2);
   finalComposer.setSize(w, h);
+  system.setStarPixelRatio(Math.min(window.devicePixelRatio, 2));
   labelRenderer.setSize(w, h);
   bloomPass.resolution.set(w, h);
   blackHole.resize(w, h);

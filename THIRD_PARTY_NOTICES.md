@@ -40,3 +40,10 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## Yale Bright Star Catalogue (BSC5)
+
+The foreground starfield (`js/starcatalog.js`) is generated at build time by
+`tools/generate_starcatalog.mjs` from the Yale Bright Star Catalogue, 5th
+edition (Hoffleit & Warren 1991), obtained via the Harvard-Smithsonian
+Telescope Data Center mirror. The catalogue is in the public domain.

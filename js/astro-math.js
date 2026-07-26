@@ -47,6 +47,39 @@ export function moonOrbitPosition(angRad, dist, out = { x: 0, y: 0, z: 0 }) {
   return out;
 }
 
+/** Ballesteros' B−V → effective temperature approximation (Kelvin). */
+export function bvToTemperature(bv) {
+  const clamped = Math.max(-0.4, Math.min(2.0, bv));
+  return 4600 * (1 / (0.92 * clamped + 1.7) + 1 / (0.92 * clamped + 0.62));
+}
+
+/**
+ * B−V colour index → display RGB (0..1), via a compact Planckian-locus fit
+ * of the blackbody colour at the Ballesteros temperature.
+ */
+export function bvToRGB(bv) {
+  const t = Math.max(1000, Math.min(40000, bvToTemperature(bv))) / 100;
+  let r;
+  let g;
+  let b;
+  if (t <= 66) {
+    r = 255;
+    g = 99.4708025861 * Math.log(t) - 161.1195681661;
+    b = t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307;
+  } else {
+    r = 329.698727446 * (t - 60) ** -0.1332047592;
+    g = 288.1221695283 * (t - 60) ** -0.0755148492;
+    b = 255;
+  }
+  const clamp = v => Math.max(0, Math.min(255, v)) / 255;
+  return [clamp(r), clamp(g), clamp(b)];
+}
+
+/** Relative brightness of magnitude v against a reference magnitude m0. */
+export function magToBrightness(v, m0 = 0) {
+  return 10 ** (-0.4 * (v - m0));
+}
+
 /**
  * Unit spin angular-momentum direction in the scene frame for a body with an
  * IAU J2000 north pole and a signed rotation period (negative hours = the

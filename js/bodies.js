@@ -6,7 +6,8 @@ import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SUN, PLANETS, MOONS, BELTS, CONFIG, VOYAGERS } from './data.js';
 import { scenePosition, orbitPoints, makeDistanceFn, voyagerScenePosition } from './kepler.js';
-import { equatorialToSceneVec, moonOrbitPosition } from './astro-math.js';
+import { equatorialToSceneVec, moonOrbitPosition, bvToRGB, magToBrightness } from './astro-math.js';
+import { STARS, STAR_STRIDE, STAR_COUNT } from './starcatalog.js';
 import { moonEclipticPosition } from './moon.js';
 import { simDaysToJdTT } from './timescales.js';
 
@@ -123,40 +124,54 @@ const STAR_PALETTE = [
   [1.0, 0.8, 0.62], [1.0, 0.72, 0.58],                 // M orange/red
 ];
 
-// Build a deep, color-varied star field on a large shell.
-function buildStarfield(scene, count, rInner, rOuter, dpr) {
+// Real-sky starfield: the Yale Bright Star Catalogue (V ≤ 6.5) placed with
+// the same equatorial→scene mapping as the Milky-Way photo, so Orion, Crux
+// and the bright stars sit exactly on their photographic counterparts.
+// Sizes/brightness follow Vmag; colours follow B−V. Point sizes multiply a
+// uPixelRatio uniform (baking devicePixelRatio into the buffer broke on
+// monitor changes).
+function buildStarfield(scene, shellRadius, dpr) {
+  const count = STAR_COUNT;
   const pos = new Float32Array(count * 3);
   const col = new Float32Array(count * 3);
   const siz = new Float32Array(count);
   for (let i = 0; i < count; i++) {
-    const r = rInner + Math.random() * (rOuter - rInner);
-    const th = Math.random() * TWO_PI, ph = Math.acos(2 * Math.random() - 1);
-    pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
-    pos[i * 3 + 1] = r * Math.cos(ph);
-    pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
-    const c = STAR_PALETTE[(Math.random() * STAR_PALETTE.length) | 0];
-    let bright = 0.25 + Math.pow(Math.random(), 2.6) * 0.50;
-    let size = 0.8 + Math.pow(Math.random(), 3.2) * 3.4;
-    if (Math.random() < 0.010) { bright = 0.85; size += 2.6; }   // rare bright stars
-    col[i * 3] = c[0] * bright; col[i * 3 + 1] = c[1] * bright; col[i * 3 + 2] = c[2] * bright;
-    siz[i] = size * dpr;
+    const o = i * STAR_STRIDE;
+    const raDeg = STARS[o + 1];
+    const decDeg = STARS[o + 2];
+    const vmag = STARS[o + 3];
+    const bv = STARS[o + 4];
+    const d = equatorialToSceneVec(raDeg, decDeg);
+    pos[i * 3] = d.x * shellRadius;
+    pos[i * 3 + 1] = d.y * shellRadius;
+    pos[i * 3 + 2] = d.z * shellRadius;
+    // Compressed flux → size/brightness so Sirius dominates without the
+    // faint 6th-magnitude carpet vanishing entirely.
+    const flux = magToBrightness(vmag, 0.5);
+    const bright = Math.min(1, 0.16 + 0.5 * Math.pow(flux, 0.42));
+    const rgb = bvToRGB(bv);
+    col[i * 3] = rgb[0] * bright;
+    col[i * 3 + 1] = rgb[1] * bright;
+    col[i * 3 + 2] = rgb[2] * bright;
+    siz[i] = Math.min(5.2, 1.05 + 2.4 * Math.pow(flux, 0.30));
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('sColor', new THREE.BufferAttribute(col, 3));
   geo.setAttribute('size', new THREE.BufferAttribute(siz, 1));
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTex: { value: starSpriteTexture() } },
+    uniforms: { uTex: { value: starSpriteTexture() }, uPixelRatio: { value: dpr } },
     // logdepthbuf_* chunks: custom shaders must opt in to the logarithmic depth
     // buffer, otherwise they write linear depth and fail the depth test/sort.
     vertexShader: `
       #include <common>
       #include <logdepthbuf_pars_vertex>
       attribute float size; attribute vec3 sColor; varying vec3 vColor;
+      uniform float uPixelRatio;
       void main(){
         vColor = sColor;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size;
+        gl_PointSize = size * uPixelRatio;
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `
@@ -444,7 +459,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   );
   // The photo is very dark (real night sky); lift it so the band reads richly.
   // ACES tone-mapping rolls off the brightest stars, so they stay crisp.
-  sky.material.color.setScalar(1.8);
+  sky.material.color.setScalar(1.5);   // dimmed: catalog points now carry the bright stars
   // Equirectangular UVs: the texture's centre maps to the sphere's local +X and
   // its top edge to local +Y. Aim +X at the Galactic Centre and +Y at the pole.
   const skyZ = new THREE.Vector3().crossVectors(galC, galN).normalize();
@@ -457,7 +472,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   // Foreground star shell — placed beyond the farthest body but inside the sky
   // sphere. Point sizes are in pixels, so the large radius does not change how
   // the stars look; it only keeps them behind the real (true-scale) planets.
-  const stars = buildStarfield(scene, 5000, 1.3e7, 1.55e7, dpr);
+  const stars = buildStarfield(scene, 1.45e7, dpr);
 
   // ----- The Sun -----------------------------------------------------------
   // The Sun is BUILT at its true radius (109.2 Earth radii) so the realistic /
@@ -643,12 +658,25 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
       tilt.add(ring);
     }
 
-    // Orbit line
+    // Orbit line, with a static per-vertex brightness ramp: full strength at
+    // the body (orbitPoints starts its sweep there, and rebuildOrbits keeps
+    // vertex 0 anchored on it) fading to a faint far side — the wake reads as
+    // direction instead of a uniform hairline ring. Positions are rewritten
+    // each resample; this shade attribute never changes.
     const op = orbitPoints(data, distFn);
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(op, 3).setUsage(THREE.DynamicDrawUsage));
+    const vertexCount = op.length / 3;
+    const shade = new Float32Array(vertexCount * 3);
+    for (let vi = 0; vi < vertexCount; vi++) {
+      const f = vi / (vertexCount - 1);
+      const w = 0.18 + 0.82 * Math.pow(0.5 * (1 + Math.cos(2 * Math.PI * f)), 1.5);
+      shade[vi * 3] = shade[vi * 3 + 1] = shade[vi * 3 + 2] = w;
+    }
+    lineGeo.setAttribute('color', new THREE.BufferAttribute(shade, 3));
     const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({
-      color: data.color, transparent: true, opacity: data.isDwarf ? 0.25 : 0.4,
+      color: data.color, vertexColors: true, transparent: true,
+      opacity: data.isDwarf ? 0.3 : 0.5,
     }));
     line.frustumCulled = false;   // spans the whole orbit; re-sampled in place each frame
     scene.add(line);
@@ -1199,6 +1227,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     planets, orbitLines, labels, selectable, belts,
     asteroidBelt, kuiperBelt, drift, trails, voyagers,
     update, setDistanceMode, setDriftMode, orientVoyagers,
+    setStarPixelRatio: (v) => { stars.material.uniforms.uPixelRatio.value = v; },
     getDistFn: () => distFn,
   };
 }
