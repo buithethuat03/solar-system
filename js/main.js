@@ -4,11 +4,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { buildSolarSystem } from './bodies.js';
 import { daysSinceJ2000, j2000DaysToDate, voyagerState } from './kepler.js';
@@ -17,7 +12,10 @@ import { loadPrefs, savePref } from './prefs.js';
 import { parseHash, serializeState, scheduleHashWrite } from './permalink.js';
 import { createEclipse } from './eclipse.js';
 import { createBlackHoleView } from './blackhole.js';
-import { equatorialToSceneDirection, interstellarScenePosition } from './blackhole-physics.js';
+import { interstellarScenePosition } from './blackhole-physics.js';
+import { createPostFX, BLOOM_LAYER } from './postfx.js';
+import { createInterstellarTravel } from './interstellar-travel.js';
+import { createBlackHoleLocator } from './blackhole-locator.js';
 import { SUN, PLANETS, MOONS, VOYAGERS, BLACK_HOLES, CONFIG } from './data.js';
 import { t, applyBodyTranslations, applyStaticTranslations, MONTHS } from './i18n.js';
 
@@ -143,63 +141,13 @@ const system = buildSolarSystem(systemRoot, loader, onPick, state.distanceMode, 
   Math.min(8, renderer.capabilities.getMaxAnisotropy()));
 
 // ---------------------------------------------------------------------------
-//  Post-processing — SELECTIVE bloom: only the Sun (and the eclipse Sun) glow.
-//  The bright Milky-Way sky and starfield must never bloom, regardless of the
-//  "Sun glow" toggle. Objects tagged on BLOOM_LAYER keep their material in the
-//  bloom pass; everything else is rendered black so it contributes no glow.
+//  Post-processing (js/postfx.js) — selective bloom: only the Sun (and the
+//  eclipse Sun) glow. Tag the Sun and its corona/glow sprites; layers.enable
+//  keeps them on layer 0 too, so the base render still draws them.
 // ---------------------------------------------------------------------------
-const BLOOM_LAYER = 1;
-// Tag the Sun and its corona/glow sprites so they are the only things that
-// bloom. layers.enable keeps them on layer 0 too, so the base render still
-// draws them; the bloom pass renders with the camera masked to BLOOM_LAYER
-// alone — ~3 draw calls instead of the old darken-the-whole-scene re-render
-// with two full graph traversals and per-frame material swaps.
 system.sunMesh.traverse((o) => o.layers.enable(BLOOM_LAYER));
-
-const renderScene = new RenderPass(scene, camera);
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.95, 0.55, 0.82
-);
-const bloomComposer = new EffectComposer(renderer);
-bloomComposer.renderToScreen = false;
-bloomComposer.addPass(renderScene);
-bloomComposer.addPass(bloomPass);
-// The glow is low-frequency: half resolution quarters the blur-chain cost
-// with no visible difference.
-bloomComposer.setSize(window.innerWidth / 2, window.innerHeight / 2);
-
-const mixPass = new ShaderPass(new THREE.ShaderMaterial({
-  uniforms: { baseTexture: { value: null }, bloomTexture: { value: bloomComposer.renderTarget2.texture } },
-  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D baseTexture; uniform sampler2D bloomTexture; varying vec2 vUv;
-    void main(){ gl_FragColor = texture2D(baseTexture, vUv) + texture2D(bloomTexture, vUv); }`,
-}), 'baseTexture');
-mixPass.needsSwap = true;
-
-// MSAA for the composer path: the canvas' own antialiasing does not apply to
-// render-target passes, so with bloom enabled (the default) edges aliased.
-const composerSamples = renderer.capabilities.isWebGL2 ? 4 : 0;
-const drawSize = renderer.getDrawingBufferSize(new THREE.Vector2());
-const finalTarget = new THREE.WebGLRenderTarget(drawSize.x, drawSize.y, {
-  type: THREE.HalfFloatType,
-  samples: composerSamples,
-});
-const finalComposer = new EffectComposer(renderer, finalTarget);
-finalComposer.addPass(renderScene);
-finalComposer.addPass(mixPass);
-finalComposer.addPass(new OutputPass());
-
-// Render one frame: selective bloom when enabled, else a plain render.
-function renderFrame() {
-  if (state.bloom) {
-    camera.layers.set(BLOOM_LAYER);   // bloom sources only
-    bloomComposer.render();
-    camera.layers.set(0);             // everything for the base render
-    finalComposer.render();
-  } else {
-    renderer.render(scene, camera);
-  }
-}
+const postfx = createPostFX({ renderer, scene, camera, getBloomEnabled: () => state.bloom });
+const renderFrame = postfx.renderFrame;
 
 // ---------------------------------------------------------------------------
 //  Picking (click to select)
@@ -599,15 +547,6 @@ const blackHoleDistanceLabel = Number.isFinite(blackHoleLogical.distanceUncertai
   ? `${blackHoleLogical.distancePc.toFixed(2)} ± ${blackHoleLogical.distanceUncertaintyPc.toFixed(2)} pc · ${t('evidenceDerived')}`
   : `${blackHoleLogical.distancePc.toFixed(2)} pc · ${t('evidenceDerived')}`;
 
-const interstellarTravel = {
-  active: false,
-  startedAt: 0,
-  durationMs: REDUCED_MOTION ? 900 : 5200,
-  worldOrigin: new THREE.Vector3(),
-  cameraStart: new THREE.Vector3(),
-  cameraEnd: new THREE.Vector3(),
-};
-
 const blackHole = createBlackHoleView({
   renderer, scene, camera, controls, loader,
   data: blackHoleData,
@@ -617,150 +556,22 @@ const blackHole = createBlackHoleView({
   tr: t,
   onEnter: () => { stopFollow(); },
   onExit: () => {
-    interstellarTravel.active = false;
-    interstellarTravel.worldOrigin.set(0, 0, 0);
-    document.body.classList.remove('black-hole-traveling');
-    interstellarTravelOverlay.hidden = true;
+    interstellarTravel.cancel();
     systemRoot.position.set(0, 0, 0);
     blackHole.setRenderAnchor(blackHoleAbsolute);
     setOrreryVisible(true);
   },
 });
 
-const interstellarTravelOverlay = document.createElement('section');
-interstellarTravelOverlay.className = 'bh-travel';
-interstellarTravelOverlay.hidden = true;
-interstellarTravelOverlay.setAttribute('aria-live', 'polite');
-interstellarTravelOverlay.innerHTML = `
-  <strong>${t('bhTravelTitle')}</strong>
-  <div class="bh-travel-row"><span>${t('bhTravelNominal')}</span><output id="bh-travel-nominal"></output></div>
-  <div class="bh-travel-row"><span>${t('bhTravelRemaining')}</span><output id="bh-travel-remaining"></output></div>
-  <div class="bh-travel-track" aria-hidden="true"><i id="bh-travel-progress"></i></div>
-  <small id="bh-travel-note">${t('bhTravelNote')}</small>
-`;
-document.body.appendChild(interstellarTravelOverlay);
-const travelNominalOutput = interstellarTravelOverlay.querySelector('#bh-travel-nominal');
-const travelRemainingOutput = interstellarTravelOverlay.querySelector('#bh-travel-remaining');
-const travelProgress = interstellarTravelOverlay.querySelector('#bh-travel-progress');
-const travelNote = interstellarTravelOverlay.querySelector('#bh-travel-note');
-travelNominalOutput.textContent = blackHoleDistanceLabel;
-
-function formatInterstellarDistance(sceneDistance) {
-  const au = Math.max(0, sceneDistance) / CONFIG.DIST_REAL_K;
-  const auPerParsec = blackHoleLogical.distanceAU / blackHoleLogical.distancePc;
-  const parsec = au / auPerParsec;
-  if (parsec >= 0.01) return `${parsec.toFixed(parsec >= 100 ? 1 : 2)} pc`;
-  if (au >= 0.01) return `${au.toLocaleString(undefined, { maximumFractionDigits: 2 })} AU`;
-  return `${(au * CONFIG.KM_PER_AU).toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
-}
-
-function updateTravelOverlay(remainingSceneDistance, animationProgress) {
-  travelRemainingOutput.textContent = formatInterstellarDistance(remainingSceneDistance);
-  travelProgress.style.width = `${Math.max(0, Math.min(1, animationProgress)) * 100}%`;
-}
-
-// Move the render origin, not kilometre/AU-scale objects, across the interstellar
-// baseline. The catalogue coordinate remains Float64 logical state; only the
-// small difference `object - worldOrigin` is uploaded to GPU matrices near BH1.
-function beginInterstellarTravel() {
-  interstellarTravel.active = true;
-  interstellarTravel.startedAt = performance.now();
-  interstellarTravel.worldOrigin.set(0, 0, 0);
-  interstellarTravel.cameraStart.copy(camera.position);
-  blackHole.getOverviewCameraOffset(interstellarTravel.cameraEnd);
-  systemRoot.position.set(0, 0, 0);
-  blackHoleRenderAnchor.copy(blackHoleAbsolute);
-  blackHole.setRenderAnchor(blackHoleRenderAnchor);
-  blackHole.setBackdropFade(0);
-  document.body.classList.add('black-hole-traveling');
-  interstellarTravelOverlay.hidden = false;
-  interstellarTravelOverlay.classList.remove('arriving');
-  travelNote.textContent = t('bhTravelNote');
-  updateTravelOverlay(blackHoleLogical.distanceSceneUnits, 0);
-
-  controls.enabled = false;
-  controls.target.copy(blackHoleRenderAnchor);
-  camera.far = blackHoleLogical.distanceSceneUnits * 1.05;
-  camera.updateProjectionMatrix();
-  camera.lookAt(controls.target);
-}
-
-function finishInterstellarTravel() {
-  interstellarTravel.active = false;
-  interstellarTravel.worldOrigin.copy(blackHoleAbsolute);
-  systemRoot.position.copy(blackHoleAbsolute).multiplyScalar(-1);
-  blackHoleRenderAnchor.set(0, 0, 0);
-  blackHole.setRenderAnchor(blackHoleRenderAnchor);
-  blackHole.setBackdropFade(1);
-  blackHole.resetView();
-  document.body.classList.remove('black-hole-traveling');
-  interstellarTravelOverlay.hidden = true;
-  interstellarTravelOverlay.classList.remove('arriving');
-}
-
-function updateInterstellarTravel() {
-  if (!interstellarTravel.active) return;
-  // A close-up selection is an explicit request to arrive immediately; its
-  // observer is then placed at the physical 30 GM/c^2 radius by blackhole.js.
-  if (blackHole.getMode() !== 'overview') {
-    finishInterstellarTravel();
-    return;
-  }
-
-  const linear = Math.min(1,
-    (performance.now() - interstellarTravel.startedAt) / interstellarTravel.durationMs);
-  const eased = linear < 0.5
-    ? 2 * linear * linear
-    : 1 - Math.pow(-2 * linear + 2, 2) / 2;
-
-  // Traverse equal logarithmic distance decades for most of the animation, then
-  // close the last true-scale AU smoothly. This is camera motion through the
-  // measured baseline, not a shortening of that baseline.
-  const arrivalFraction = 0.94;
-  let remainingFraction;
-  if (eased < arrivalFraction) {
-    const decadeProgress = eased / arrivalFraction;
-    remainingFraction = Math.exp(Math.log(1e-8) * decadeProgress);
-  } else {
-    const finalProgress = (eased - arrivalFraction) / (1 - arrivalFraction);
-    remainingFraction = 1e-8 * (1 - finalProgress) ** 2;
-  }
-
-  // Compute the small near-target remainder directly. Deriving it by
-  // subtracting two ~10^12-unit vectors would reintroduce cancellation just
-  // where the binary's kilometre/AU detail matters most.
-  blackHoleRenderAnchor.copy(blackHoleAbsolute).multiplyScalar(remainingFraction);
-  interstellarTravel.worldOrigin.copy(blackHoleAbsolute).sub(blackHoleRenderAnchor);
-  systemRoot.position.copy(interstellarTravel.worldOrigin).multiplyScalar(-1);
-  blackHole.setRenderAnchor(blackHoleRenderAnchor);
-
-  camera.position.lerpVectors(
-    interstellarTravel.cameraStart,
-    interstellarTravel.cameraEnd,
-    eased,
-  );
-  controls.target.copy(blackHoleRenderAnchor);
-  camera.lookAt(controls.target);
-
-  // Blend the Gaia reference sky over the Solar System's backdrop through the
-  // final ~1.4 s, so the far-plane snap at arrival only clips geometry that
-  // is already fully covered — no black flash, no star pop.
-  const arrivalFade = THREE.MathUtils.smoothstep(eased, 0.86, 0.985);
-  blackHole.setBackdropFade(arrivalFade);
-  const arriving = arrivalFade > 0;
-  if (arriving !== interstellarTravelOverlay.classList.contains('arriving')) {
-    interstellarTravelOverlay.classList.toggle('arriving', arriving);
-    travelNote.textContent = arriving ? t('bhTravelArriving') : t('bhTravelNote');
-  }
-
-  const solarDistance = interstellarTravel.worldOrigin.length();
-  const targetDistance = blackHoleRenderAnchor.length();
-  updateTravelOverlay(targetDistance, linear);
-  camera.far = Math.max(CONFIG.DIST_REAL_K * 50, solarDistance, targetDistance) * 1.05;
-  camera.updateProjectionMatrix();
-
-  if (linear >= 1) finishInterstellarTravel();
-}
+const interstellarTravel = createInterstellarTravel({
+  camera, controls, systemRoot, blackHole,
+  absolute: blackHoleAbsolute,
+  renderAnchor: blackHoleRenderAnchor,
+  logical: blackHoleLogical,
+  distanceLabel: blackHoleDistanceLabel,
+  config: CONFIG,
+  reducedMotion: REDUCED_MOTION,
+});
 
 function enterBlackHoleView(data = blackHoleData) {
   if (!data || data.id !== blackHoleData?.id) return;
@@ -773,7 +584,7 @@ function enterBlackHoleView(data = blackHoleData) {
     if (distanceSelect) distanceSelect.value = 'realistic';
   }
   blackHole.enter('overview', { deferCamera: true });
-  beginInterstellarTravel();
+  interstellarTravel.begin();
 }
 
 function enterEclipse(kind) {
@@ -894,49 +705,16 @@ if (shotBtn) {
   });
 }
 
-// Distant-object locator for the actual Float64 catalogue position. At Solar-
-// System scale its 3D geometry is necessarily sub-pixel, so this projected
-// marker remains clickable; focus starts the floating-origin journey to it.
-const coordValue = (quantity) => (typeof quantity === 'number' ? quantity : quantity?.value);
-const locatorDirectionData = equatorialToSceneDirection(
-  coordValue(blackHoleData.coordinates.raDeg),
-  coordValue(blackHoleData.coordinates.decDeg),
-);
-const locatorDirection = new THREE.Vector3(
-  locatorDirectionData.x, locatorDirectionData.y, locatorDirectionData.z,
-);
-const locatorWorld = new THREE.Vector3();
-const locatorForward = new THREE.Vector3();
-const blackHoleLocator = document.createElement('button');
-blackHoleLocator.type = 'button';
-blackHoleLocator.className = 'bh-orrery-locator';
-blackHoleLocator.dataset.id = blackHoleData.id;
-blackHoleLocator.setAttribute('aria-label', `${blackHoleData.name} — ${blackHoleDistanceLabel}`);
-blackHoleLocator.innerHTML = `<span class="bh-locator-mark" aria-hidden="true">◎</span><span><b>${blackHoleData.name}</b><small>${blackHoleDistanceLabel}</small></span>`;
-let locatorLastDown = -Infinity;
-blackHoleLocator.addEventListener('pointerdown', (event) => {
-  event.stopPropagation();
-  const now = performance.now();
-  const focus = now - locatorLastDown < 350;
-  locatorLastDown = focus ? -Infinity : now;
-  selectBlackHole(blackHoleData, focus);
+// The clickable Gaia BH1 marker (js/blackhole-locator.js): a projected DOM
+// proxy for the necessarily sub-pixel Float64 catalogue position.
+const blackHoleLocator = createBlackHoleLocator({
+  camera,
+  data: blackHoleData,
+  distanceLabel: blackHoleDistanceLabel,
+  onSelect: (data, focus) => selectBlackHole(data, focus),
+  isHidden: () => eclipse.isActive() || blackHole.isActive()
+    || !state.showLabels || !state.showBlackHoles,
 });
-document.body.appendChild(blackHoleLocator);
-
-function updateBlackHoleLocator() {
-  const modeHidden = eclipse.isActive() || blackHole.isActive()
-    || !state.showLabels || !state.showBlackHoles;
-  camera.getWorldDirection(locatorForward);
-  const facesCamera = locatorForward.dot(locatorDirection) > 0;
-  locatorWorld.copy(camera.position).addScaledVector(locatorDirection, 1.0e6).project(camera);
-  const inFrame = Math.abs(locatorWorld.x) <= 1.04 && Math.abs(locatorWorld.y) <= 1.04
-    && locatorWorld.z >= -1 && locatorWorld.z <= 1;
-  const visible = !modeHidden && facesCamera && inFrame;
-  blackHoleLocator.style.display = visible ? '' : 'none';
-  if (!visible) return;
-  blackHoleLocator.style.left = `${(locatorWorld.x * 0.5 + 0.5) * window.innerWidth}px`;
-  blackHoleLocator.style.top = `${(-locatorWorld.y * 0.5 + 0.5) * window.innerHeight}px`;
-}
 
 // ---------------------------------------------------------------------------
 //  Resize
@@ -945,11 +723,9 @@ window.addEventListener('resize', () => {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h; camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-  bloomComposer.setSize(w / 2, h / 2);
-  finalComposer.setSize(w, h);
+  postfx.setSize(w, h);
   system.setStarPixelRatio(Math.min(window.devicePixelRatio, 2));
   labelRenderer.setSize(w, h);
-  bloomPass.resolution.set(w, h);
   blackHole.resize(w, h);
 });
 
@@ -1124,8 +900,8 @@ function animate() {
   if (blackHole.isActive()) {
     if (!state.paused) state.simDays += dt * state.speed * state.direction;
     if (interstellarTravel.active) system.update(state.simDays);
-    updateInterstellarTravel();
-    updateBlackHoleLocator();
+    interstellarTravel.update();
+    blackHoleLocator.update();
     // The local binary overview reuses the inertial backdrop. Keep its shells
     // centred even if the Solar-System root had previously been rebased around
     // Voyager or displaced by Accurate-mode galactic drift.
@@ -1148,7 +924,7 @@ function animate() {
 
   // Eclipse mode runs its own simulation; the orrery is hidden.
   if (eclipse.isActive()) {
-    updateBlackHoleLocator();
+    blackHoleLocator.update();
     eclipse.update(dt);
     controls.update();
     system.sky.position.copy(camera.position).sub(systemRoot.position);
@@ -1192,7 +968,7 @@ function animate() {
   }
 
   controls.update();
-  updateBlackHoleLocator();
+  blackHoleLocator.update();
   system.orientVoyagers();   // physical mesh scale is fixed; only aim its dish
   // Backdrop objects are children of the movable system root, so express the
   // camera position in that root's local coordinates.

@@ -863,6 +863,38 @@ export const BELTS = {
   kuiper:   { innerAU: 33,  outerAU: 50,  count: 2600, thickness: 1.4,  size: [0.05, 0.12] },
 };
 
+// ---------------------------------------------------------------------------
+//  Provenance: the physical values in the Sun/planet/Moon info tables follow
+//  the NASA NSSDC planetary fact sheets (Williams, D. R., NASA GSFC). The
+//  info panel renders these as clickable "Sources" entries.
+// ---------------------------------------------------------------------------
+const NSSDC = 'https://nssdc.gsfc.nasa.gov/planetary/factsheet/';
+const FACT_SHEETS = {
+  sun: 'sunfact.html', mercury: 'mercuryfact.html', venus: 'venusfact.html',
+  earth: 'earthfact.html', mars: 'marsfact.html', jupiter: 'jupiterfact.html',
+  saturn: 'saturnfact.html', uranus: 'uranusfact.html', neptune: 'neptunefact.html',
+  pluto: 'plutofact.html', moon: 'moonfact.html',
+};
+for (const body of [SUN, ...PLANETS, ...MOONS]) {
+  const page = FACT_SHEETS[body.id];
+  if (!page) continue;
+  body.sources = [
+    {
+      id: `nssdc-${body.id}`,
+      title: `NASA NSSDC Planetary Fact Sheet — ${body.name}`,
+      citation: 'Williams, D. R., NASA Goddard Space Flight Center',
+      url: `${NSSDC}${page}`,
+    },
+    {
+      id: 'jpl-elements',
+      title: 'Keplerian Elements for Approximate Positions of the Major Planets',
+      citation: 'E. M. Standish & J. G. Williams, NASA/JPL (J2000)',
+      url: 'https://ssd.jpl.nasa.gov/planets/approx_pos.html',
+      note: 'Orbital elements and secular rates driving the date-aware positions.',
+    },
+  ];
+}
+
 export const CREDITS =
   'Planetary & star textures © Solar System Scope (CC BY 4.0). ' +
   'Pluto & major-moon maps: NASA/JHUAPL/SwRI & USGS Astrogeology (public domain). ' +

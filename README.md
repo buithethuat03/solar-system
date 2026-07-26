@@ -18,8 +18,10 @@ Schwarzschild light bending.
   NASA/JPL J2000 orbital elements and secular rates.
 - **The Sun, all eight planets, and five dwarf planets**: Pluto, Ceres, Haumea,
   Makemake, and Eris.
-- **Seven major moons**: Earth's Moon, Io, Europa, Ganymede, Callisto, Titan,
-  and Triton, shown on simplified near-circular orbits.
+- **Seven major moons**: Earth's Moon follows a truncated ELP2000-82B
+  ephemeris (Meeus ch. 47) with real phases, perigee/apogee, and node
+  regression; Io, Europa, Ganymede, Callisto, Titan, and Triton use
+  epoch-anchored near-circular orbits.
 - **Detailed rendering** with relative body sizes, axial tilts, prograde and
   retrograde rotation, Saturn and Uranus rings, atmospheres, a photographic
   Milky Way, and selective HDR bloom around the Sun.
@@ -42,10 +44,18 @@ Schwarzschild light bending.
   where body sizes and interplanetary distances share one true-scale ruler.
 - **Solar and lunar eclipse modes** with a 3D teaching rig, shadow cones, an
   Earth-surface point of view, timeline controls, phase readouts, total/annular
-  solar options, corona effects, and a copper-red lunar totality.
+  solar options, corona effects, and a copper-red lunar totality — plus a
+  catalog of 224 real eclipses (2001-2050, NASA GSFC canon) whose geometry
+  (type, magnitude, gamma, contact times) is recomputed from the app's own
+  ephemeris and cross-checked in CI.
+- **A real night sky**: 8,418 stars from the Yale Bright Star Catalogue
+  placed by RA/Dec with B-V-derived colors, aligned with the photographic
+  Milky Way backdrop.
 - **English and Vietnamese UI**, standard and high-resolution (up to 8K)
-  texture choices, fullscreen mode,
-  mouse/touch navigation, and keyboard flight controls.
+  texture choices, fullscreen mode, mouse/touch navigation, and keyboard
+  flight controls.
+- **Shareable permalinks, persistent settings, screenshots**, and an
+  installable PWA with a downloadable ~30 MB offline pack.
 
 For a full walkthrough of the interface, controls, view modes, Voyager probes,
 and eclipse tools, see the [Web Usage Guide](docs/web-usage.md).
@@ -91,8 +101,14 @@ manager is required.
 | Inspect an object | Single-click the body or its label |
 | Focus and follow | Double-click a body, double-click/double-tap its label, choose it in the navigator, or use **Focus & follow** |
 | Play or pause | `Space` or the play/pause button |
-| Stop following | `Esc` or **Stop following** |
-| Reset the camera | **Reset view** |
+| Search the navigator | `/` focuses the search box; `Enter` jumps to the first match |
+| Toggle layers | `L` labels, `O` orbit paths, `M` moons |
+| Change speed | `[` slower, `]` faster |
+| Step one day | `,` back, `.` forward |
+| Help | `?` opens/closes the help panel |
+| Stop following / close panels | `Esc` (help, then popovers, then special modes, then follow) |
+| Reset the camera | `0` or **Reset view** |
+| Share / screenshot | The link button copies a permalink; the camera button saves a captioned PNG |
 
 Keyboard flight speed adapts to the current zoom level. Manual flight stops an
 active follow. In an eclipse view, `Space` controls the eclipse timeline; Gaia
@@ -123,18 +139,86 @@ js/bodies.js            Scene objects, materials, belts, trails, and Voyager mod
 js/data.js              Orbital, physical, descriptive, moon, belt, and probe data
 js/kepler.js            Planet solver, distance mapping, and Voyager interpolation
 js/voyager_ephem.js     Generated embedded NASA/JPL HORIZONS state-vector samples
+js/astro-math.js        Frame conversions, moon orbits, star color/brightness math
+js/timescales.js        Delta-T (TT-UTC) model with measured IERS overlay
+js/moon.js              Truncated ELP2000-82B lunar ephemeris (Meeus ch. 47)
+js/eclipse_math.js      Real eclipse geometry from the app's own ephemerides
+js/eclipse_catalog.js   Generated NASA GSFC eclipse canon 2001-2050 (224 events)
+js/starcatalog.js       Generated Yale BSC5 star table (8,418 stars, V <= 6.5)
+js/prefs.js             Versioned, validated localStorage settings blob
+js/permalink.js         Shareable #hash state (parse/serialize/throttled write)
+js/offline_manifest.js  Generated asset list for the PWA offline pack
 js/ui.js                Navigator, time controls, view settings, and info panel
 js/eclipse.js           Solar/lunar eclipse teaching rigs and POV rendering
 js/blackhole.js         Gaia BH1 overview, close-up renderer, and special-mode lifecycle
 js/blackhole-physics.js Coordinate, binary-orbit, and Schwarzschild calculations
 js/i18n*.js             English/Vietnamese interface and body translations
 js/fullscreen.js        Browser fullscreen/UI synchronization
+sw.js                   Service worker (offline caching strategies)
+manifest.webmanifest    PWA manifest (installable app metadata + icons)
+fonts/                  Self-hosted Orbitron/Inter woff2 subsets (OFL)
 lib/                    Local three.js r160 module and required addons
 models/Voyager.glb      NASA Voyager 3D model
 textures/               Standard and high-resolution texture sets
 docs/                   Preview image and end-user documentation
-tools/                  Voyager ephemeris generator and focused Node checks
+tools/                  Generators (star/eclipse/offline catalogs) + Node test suites
 ```
+
+## Testing
+
+Every `tools/test_*.mjs` file is a self-contained Node suite (no packages, no
+DOM). Run them all from the repository root:
+
+```bash
+for f in tools/test_*.mjs; do node "$f"; done
+```
+
+They cover the black-hole physics, orientation/spin conventions, the lunar
+ephemeris (pinned against Meeus worked examples), an independent
+ephemeris-vs-catalog cross-check of all 224 eclipses, the star catalog, UI
+helpers, permalink parsing, saved preferences, i18n key parity, and offline
+manifest freshness. GitHub Actions (`.github/workflows/ci.yml`) runs the same
+suites plus a Python compile check on every push.
+
+## Hosting
+
+The repository is a self-contained static site — any static file host works
+(GitHub Pages serves the live demo). Requirements:
+
+- Correct MIME type for `.js` (`text/javascript`) — `server.py` and
+  `web.config` (IIS) handle this; most hosts are already correct.
+- HTTPS (or localhost) if you want the service worker / offline mode active.
+- No build step: deploy the repository as-is. After changing assets, regenerate
+  the offline pack list with `node tools/generate_offline_manifest.mjs`, and
+  bump `VERSION` in `sw.js` so returning visitors pick up the new files.
+
+## Permalinks and saved settings
+
+The URL hash encodes the shareable view state:
+`#b=<bodyId>&d=YYYY-MM-DD&m=v|r|a&l=olmdsbkg&s=<daysPerSec>&p=1&dbg=1`
+(`b` selected body, `d` UTC date, `m` distance mode, `l` visible layers,
+`s` speed, `p` paused, `dbg` shows the FPS readout). The share button copies
+the current link; opening one restores that exact view **without** overwriting
+the recipient's saved preferences.
+
+Settings persist in `localStorage`: `solar.prefs` (versioned blob of the 13
+view settings), `solar.lang` (`en`/`vi`), `solar.texRes` (`2k`/`8k`). A link's
+state always wins over saved preferences for that visit.
+
+## Accessibility
+
+Pinch-zoom is never blocked; the info panel is an `aria-live` region so
+screen readers announce the selected body; the help dialog and popovers close
+with `Esc` in priority order; every interactive control is reachable by
+keyboard with visible `:focus-visible` outlines; `prefers-reduced-motion`
+shortens camera animations and disables decorative pulses.
+
+## Debug hooks
+
+`window.SOLAR` (in the browser console) exposes the scene, camera, controls,
+simulation `state`, `controller`, `eclipse`, and `blackHole` modules for
+inspection. `window.SOLAR.clearCaches()` wipes the service-worker caches.
+Add `dbg=1` to the URL hash to show the FPS readout.
 
 ## Scientific and technical notes
 
@@ -142,8 +226,11 @@ tools/                  Voyager ephemeris generator and focused Node checks
   documented range is approximately 1800–2050. Pluto uses the long-term element
   set; the other dwarf planets use fixed J2000-derived elements. Dates outside
   those ranges still render, but should not be treated as precision ephemerides.
-- Moon paths are simplified near-circular parent-relative orbits. Belt particles
-  use simplified circular paths and Kepler's third law.
+- Earth's Moon uses a truncated ELP2000-82B series (60+60 longitude/latitude
+  terms, Meeus ch. 47) on a TT timescale with a measured Delta-T overlay;
+  positions are good to roughly an arcminute, which is what makes date-true
+  eclipse geometry possible. The other moons remain simplified near-circular
+  orbits. Belt particles use simplified circular paths and Kepler's third law.
 - Voyager samples use the HORIZONS J2000 ecliptic, Sun-centered frame. The app
   interpolates the stored positions and velocities with cubic Hermite curves;
   dates beyond the final table samples (about 2055) use constant-velocity
@@ -151,8 +238,11 @@ tools/                  Voyager ephemeris generator and focused Node checks
 - Voyager models remain at physical metre scale on the true-scale scene ruler.
   A label helps locate them, and origin rebasing preserves enough precision to
   inspect them far from the Sun.
-- Eclipse modes are explanatory simulations with didactic scale and geometry,
-  not predictions tied to the selected calendar date.
+- Eclipse modes offer both a didactic-scale demo and a "real events" mode:
+  224 solar and lunar eclipses (2001-2050) from the NASA GSFC canon, with
+  type, magnitude, gamma, and contact windows recomputed geocentrically from
+  the app's own Sun/Moon ephemerides (accuracy about +/-0.02 in gamma, +/-2
+  minutes in time; topocentric local circumstances are out of scope).
 - Gaia BH1's logical 3D anchor uses its measured ICRS direction (J2016.0) and
   the nominal reciprocal-parallax distance, `478.47 ± 4.58 pc`. The selectable
   screen locator is only a proxy for that necessarily sub-pixel target. During
@@ -231,6 +321,13 @@ view. In **Realistic** and **Accurate · live**, one scene ruler is shared by bo
 radii and distances: the Sun's true diameter spans about 1/107 of Earth's orbital
 radius. The Sun therefore looks tiny and planets are separated by large empty
 gaps. Use the navigator, **Focus & follow**, and keyboard flight to explore.
+
+## License
+
+The application code is released under the [MIT License](LICENSE). Bundled
+third-party assets (textures, the Voyager model, the Gaia sky, the Yale star
+catalog, fonts, three.js) keep their own licenses — see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the credits below.
 
 ## Data sources and credits
 

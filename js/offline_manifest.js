@@ -11,6 +11,7 @@ export const OFFLINE_ASSETS = [
   'icons/icon.svg',
   'icons/maskable.svg',
   'js/astro-math.js',
+  'js/blackhole-locator.js',
   'js/blackhole-lut-constants.js',
   'js/blackhole-physics.js',
   'js/blackhole-shaders.js',
@@ -23,11 +24,13 @@ export const OFFLINE_ASSETS = [
   'js/fullscreen.js',
   'js/i18n.bodies.js',
   'js/i18n.js',
+  'js/interstellar-travel.js',
   'js/kepler.js',
   'js/main.js',
   'js/moon.js',
   'js/offline_manifest.js',
   'js/permalink.js',
+  'js/postfx.js',
   'js/prefs.js',
   'js/starcatalog.js',
   'js/timescales.js',
@@ -86,4 +89,4 @@ export const OFFLINE_ASSETS = [
   'textures/blackhole/schwarzschild-lut-512x512-rg32f.bin',
   'textures/blackhole/schwarzschild-lut-512x512.json',
 ];
-export const OFFLINE_TOTAL_BYTES = 31611888;
+export const OFFLINE_TOTAL_BYTES = 31615581;

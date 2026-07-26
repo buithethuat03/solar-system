@@ -47,3 +47,17 @@ The foreground starfield (`js/starcatalog.js`) is generated at build time by
 `tools/generate_starcatalog.mjs` from the Yale Bright Star Catalogue, 5th
 edition (Hoffleit & Warren 1991), obtained via the Harvard-Smithsonian
 Telescope Data Center mirror. The catalogue is in the public domain.
+
+## Self-hosted fonts — Orbitron & Inter
+
+The `fonts/` directory contains woff2 subsets of
+[Orbitron](https://fonts.google.com/specimen/Orbitron) (© The Orbitron Project
+Authors) and [Inter](https://rsms.me/inter/) (© The Inter Project Authors),
+both distributed under the [SIL Open Font License 1.1](https://openfontlicense.org/).
+The subsets (latin for Orbitron; latin + vietnamese for Inter) were produced by
+Google Fonts' css2 API and are redistributed here unmodified.
+
+## three.js
+
+`lib/` vendors [three.js](https://threejs.org) r160 and required addons,
+© 2010–2024 three.js authors, distributed under the MIT License.
