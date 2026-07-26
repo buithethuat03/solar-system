@@ -586,12 +586,13 @@ interstellarTravelOverlay.innerHTML = `
   <div class="bh-travel-row"><span>${t('bhTravelNominal')}</span><output id="bh-travel-nominal"></output></div>
   <div class="bh-travel-row"><span>${t('bhTravelRemaining')}</span><output id="bh-travel-remaining"></output></div>
   <div class="bh-travel-track" aria-hidden="true"><i id="bh-travel-progress"></i></div>
-  <small>${t('bhTravelNote')}</small>
+  <small id="bh-travel-note">${t('bhTravelNote')}</small>
 `;
 document.body.appendChild(interstellarTravelOverlay);
 const travelNominalOutput = interstellarTravelOverlay.querySelector('#bh-travel-nominal');
 const travelRemainingOutput = interstellarTravelOverlay.querySelector('#bh-travel-remaining');
 const travelProgress = interstellarTravelOverlay.querySelector('#bh-travel-progress');
+const travelNote = interstellarTravelOverlay.querySelector('#bh-travel-note');
 travelNominalOutput.textContent = blackHoleDistanceLabel;
 
 function formatInterstellarDistance(sceneDistance) {
@@ -620,8 +621,11 @@ function beginInterstellarTravel() {
   systemRoot.position.set(0, 0, 0);
   blackHoleRenderAnchor.copy(blackHoleAbsolute);
   blackHole.setRenderAnchor(blackHoleRenderAnchor);
+  blackHole.setBackdropFade(0);
   document.body.classList.add('black-hole-traveling');
   interstellarTravelOverlay.hidden = false;
+  interstellarTravelOverlay.classList.remove('arriving');
+  travelNote.textContent = t('bhTravelNote');
   updateTravelOverlay(blackHoleLogical.distanceSceneUnits, 0);
 
   controls.enabled = false;
@@ -637,9 +641,11 @@ function finishInterstellarTravel() {
   systemRoot.position.copy(blackHoleAbsolute).multiplyScalar(-1);
   blackHoleRenderAnchor.set(0, 0, 0);
   blackHole.setRenderAnchor(blackHoleRenderAnchor);
+  blackHole.setBackdropFade(1);
   blackHole.resetView();
   document.body.classList.remove('black-hole-traveling');
   interstellarTravelOverlay.hidden = true;
+  interstellarTravelOverlay.classList.remove('arriving');
 }
 
 function updateInterstellarTravel() {
@@ -685,6 +691,17 @@ function updateInterstellarTravel() {
   );
   controls.target.copy(blackHoleRenderAnchor);
   camera.lookAt(controls.target);
+
+  // Blend the Gaia reference sky over the Solar System's backdrop through the
+  // final ~1.4 s, so the far-plane snap at arrival only clips geometry that
+  // is already fully covered — no black flash, no star pop.
+  const arrivalFade = THREE.MathUtils.smoothstep(eased, 0.86, 0.985);
+  blackHole.setBackdropFade(arrivalFade);
+  const arriving = arrivalFade > 0;
+  if (arriving !== interstellarTravelOverlay.classList.contains('arriving')) {
+    interstellarTravelOverlay.classList.toggle('arriving', arriving);
+    travelNote.textContent = arriving ? t('bhTravelArriving') : t('bhTravelNote');
+  }
 
   const solarDistance = interstellarTravel.worldOrigin.length();
   const targetDistance = blackHoleRenderAnchor.length();

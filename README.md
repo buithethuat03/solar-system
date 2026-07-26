@@ -34,7 +34,8 @@ Schwarzschild light bending.
   origin lets the camera navigate the nominal 478 pc baseline without moving
   the system closer or losing the local binary's kilometre-scale precision.
   The Schwarzschild close-up adds curved-spacetime ray tracing, with no invented
-  accretion disk or jet for this dormant system.
+  accretion disk or jet for this dormant system by default; an explicitly
+  labeled, opt-in illustrative disk mode is available for the canonical look.
 - **Time travel controls** from real time to about ten simulated years per
   second, including reverse playback, presets, UTC date selection, and Now.
 - **Three distance views**: an approachable compressed overview and two views
@@ -197,9 +198,18 @@ a very tight inner BH+BH pair (`P_inner ≲ 1.5 days`). The real spin and spin a
 also remain unknown. The scene labels both the single-object interpretation and
 `a*=0` as model assumptions, while calculated radii and orbital distances are
 derived values. The system has no detected accretion emission, so the
-visualization adds no luminous disk, jet, bloom, or painted photon ring;
-brightness near the critical curve appears only when reference-sky or companion
-light is lensed there.
+visualization adds no luminous disk, jet, black-hole bloom, or painted photon
+ring by default; brightness near the critical curve appears only when
+reference-sky or companion light is lensed there. An **opt-in illustrative
+accretion disk** (off by default, persistently labeled "model, not an
+observation") renders a physically motivated thin disk in the measured binary
+orbital plane — ISCO to 30 GM/c², `T ∝ r^(-3/4)` with a zero-torque inner
+taper, exact Keplerian Doppler and gravitational shifts via the Cunningham
+g-factor, and multiple lensed images (including the photon-ring sub-images)
+computed from precomputed Schwarzschild master-trajectory tables rather than
+painted. Received light is also blueshifted and brightened by the exact
+static-observer factors, and the star carries a modeled point-spread glow —
+both labeled in the panel.
 
 At Gaia BH1's measured parallax, the model's real shadow diameter as seen from
 Earth is only about 1.99 nanoarcseconds. The close-up is therefore an intentional

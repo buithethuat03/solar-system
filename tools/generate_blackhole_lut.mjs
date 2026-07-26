@@ -394,6 +394,10 @@ async function main() {
   console.log(`Max checked LUT interpolation error: ${validation.maxInterpolationAbsErrorRad.toExponential(3)} rad`);
 }
 
+// Shared quadrature machinery for sibling generators (the disk-trajectory
+// tool). Exporting these does not change this generator's committed output.
+export { legendreQuadrature, impactParameter, turningRadius, integralToTurning };
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => { console.error(error); process.exitCode = 1; });
 }

@@ -38,6 +38,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
+# Threading matters: browsers open several keep-alive connections and the
+# black-hole mode lazily fetches multi-megabyte geodesic tables in parallel; a
+# single-threaded server lets one idle connection starve every other request.
+with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), Handler) as httpd:
     print(f"Solar System running at  http://127.0.0.1:{PORT}/")
     httpd.serve_forever()

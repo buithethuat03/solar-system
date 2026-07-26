@@ -259,8 +259,26 @@ a decorative overlay.
 
 Gaia BH1 is dormant and has no detected accretion emission. Accordingly, this
 mode contains no luminous accretion disk, jet, black-hole bloom, or fixed photon
-ring. A bright feature near the critical curve appears only where reference-sky
-or companion light is mapped there.
+ring by default. A bright feature near the critical curve appears only where
+reference-sky or companion light is mapped there.
+
+An **illustrative accretion disk** checkbox (off by default; the choice is
+remembered) adds a clearly labeled thin-disk model for the canonical
+black-hole look: material from the ISCO to 30 GM/c² in the measured binary
+orbital plane, a `T ∝ r^(-3/4)` temperature profile with a zero-torque inner
+taper peaking at 8000 K, exact Keplerian Doppler beaming and gravitational
+shifts (the approaching side is visibly brighter and bluer), and multiple
+lensed images — the near side in front of the shadow, the under-disk image and
+the photon-ring sub-images all come from precomputed Schwarzschild
+master-trajectory tables, never from a painted ring. While the mode is active a
+persistent caveat states that it is an illustration, not an observation; the
+static CPU fallback never renders it. The ~4 MiB of disk geodesic tables
+download only on the first opt-in.
+
+The close-up also applies the exact static-observer reception factors — light
+arriving from far away is blueshifted by `1/√(1−2GM/rc²)` and brightened by
+`(1−2GM/rc²)⁻²` (a +15% effect at the default radius, ×2.2 at the closest
+dolly) — plus an Exposure slider and a labeled instrument/eye point-spread glow.
 
 ### Reference sky and graphics fallback
 
@@ -273,8 +291,10 @@ checking lensing geometry, but is not calibrated photometry and is not the exact
 sky a physical observer at Gaia BH1 would see. The app downloads no astronomy
 data at runtime.
 
-Interactive close-up rendering requires WebGL2. Automatic quality changes only
-the render scale (`1.0`, `0.75`, or `0.5`), never the physical ray mapping. If
+Interactive close-up rendering requires WebGL2. Automatic quality adjusts only
+the render scale — continuously between `0.5` and `1.0` in near-invisible
+1/16 notches (the manual presets remain `1.0`, `0.75`, `0.5`) — never the
+physical ray mapping. If
 the required shader or float texture is unavailable, the mode identifies the
 limitation and shows a static frame generated from the same solver instead of a
 fake radial warp.

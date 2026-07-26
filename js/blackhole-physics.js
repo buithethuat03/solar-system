@@ -371,8 +371,132 @@ export function schwarzschildShadowAngularRadius(radiusOverM) {
 
 export const observerShadowAngularRadius = schwarzschildShadowAngularRadius;
 
+/**
+ * Received/emitted frequency ratio for light falling from far away to a
+ * static observer at `radiusOverM` (the reciprocal of the time dilation).
+ */
+export function gravitationalBlueshiftFactor(radiusOverM) {
+  return 1 / staticObserverTimeDilation(radiusOverM);
+}
+
+/**
+ * Bolometric intensity gain of the received radiation field for the same
+ * static observer. Liouville's theorem keeps I_nu / nu^3 invariant along a
+ * ray, so the frequency-integrated intensity scales as the fourth power of
+ * the blueshift factor: (1 - 2/r)^-2.
+ */
+export function receivedBolometricIntensityFactor(radiusOverM) {
+  const blueshift = gravitationalBlueshiftFactor(radiusOverM);
+  return blueshift ** 4;
+}
+
 export function criticalImpactParameterOverM() {
   return CRITICAL_IMPACT_PARAMETER_OVER_M;
+}
+
+/**
+ * Coordinate angular velocity Omega = r^(-3/2) of a circular Schwarzschild
+ * geodesic (G = c = M = 1). Stable circular orbits exist only from the ISCO
+ * outward, which is also the illustrative disk's inner edge.
+ */
+export function circularOrbitAngularVelocity(radiusOverM) {
+  const radius = positiveNumber(radiusOverM, 'emitter radius in GM/c^2');
+  if (radius < 6) {
+    throw new RangeError('Stable circular Schwarzschild orbits require r >= 6 GM/c^2 (ISCO)');
+  }
+  return radius ** -1.5;
+}
+
+/**
+ * Azimuthal impact parameter lambda = L_z/E of the physical photon behind a
+ * backward-traced camera ray, about the disk axis. The single sign convention
+ * lives here: the backward ray's orbital-plane normal is e1 x e2 (radial
+ * toward the ray's tangent); the physical photon runs the path the other way,
+ * so its angular momentum is opposite that normal, giving lambda = -b (n . z).
+ */
+export function photonAzimuthalImpactParameter(
+  impactParameterOverM,
+  backwardPlaneNormalDotDiskAxis,
+) {
+  const impactParameter = finiteNumber(impactParameterOverM, 'impact parameter in GM/c^2');
+  if (impactParameter < 0) throw new RangeError('impact parameter cannot be negative');
+  const alignment = finiteNumber(
+    backwardPlaneNormalDotDiskAxis,
+    'backward-plane-normal / disk-axis cosine',
+  );
+  if (Math.abs(alignment) > 1 + 1e-9) {
+    throw new RangeError('a cosine between unit vectors cannot exceed 1');
+  }
+  return -impactParameter * alignment;
+}
+
+/**
+ * Observed/emitted frequency ratio for a photon leaving a circular-orbit
+ * emitter in the disk and reaching a static observer at rObserverOverM
+ * (Cunningham 1975 machinery for a = 0):
+ *   g = sqrt(1 - 3/r_e) / [ sqrt(1 - 2/r_O) * (1 - Omega(r_e) * lambda) ]
+ * lambda is the photon's azimuthal impact parameter about the disk axis.
+ */
+export function diskEmitterGFactor(rEmitOverM, rObserverOverM, lambdaOverM) {
+  const omega = circularOrbitAngularVelocity(rEmitOverM);
+  const observerDilation = staticObserverTimeDilation(rObserverOverM);
+  const lambda = finiteNumber(lambdaOverM, 'azimuthal impact parameter in GM/c^2');
+  const doppler = 1 - omega * lambda;
+  if (doppler <= 0) {
+    throw new RangeError('photon direction lies outside the emitter forward light cone');
+  }
+  return Math.sqrt(1 - 3 / rEmitOverM) / (observerDilation * doppler);
+}
+
+/**
+ * Thin-disk temperature profile T ∝ r^(-3/4) (1 - sqrt(r_in/r))^(1/4) with
+ * the inner-edge taper of a zero-torque boundary, normalized so the maximum
+ * (at r = 49/36 r_in) equals peakTemperatureK. Display model for the
+ * illustrative disk; labeled as such in the UI.
+ */
+export function thinDiskTemperatureK(radiusOverM, peakTemperatureK, innerRadiusOverM = 6) {
+  const inner = positiveNumber(innerRadiusOverM, 'inner disk radius in GM/c^2');
+  const radius = finiteNumber(radiusOverM, 'disk radius in GM/c^2');
+  if (radius < inner) {
+    throw new RangeError('the thin disk has no material inside its inner radius');
+  }
+  const peak = positiveNumber(peakTemperatureK, 'peak temperature in K');
+  const profile = r => r ** -0.75 * (1 - Math.sqrt(inner / r)) ** 0.25;
+  return peak * profile(radius) / profile(inner * 49 / 36);
+}
+
+/**
+ * Unit angular-momentum direction of the binary orbit in scene coordinates.
+ * Two in-plane position directions a quarter turn of the latitude argument
+ * apart, crossed in the direction of orbital motion, give the prograde normal
+ * without any dependence on the sky basis handedness.
+ */
+export function binaryOrbitalPlaneNormal(system) {
+  const basis = skyBasis(system);
+  const inclination = finiteNumber(system.orbit?.inclinationDeg, 'inclination') * DEG_TO_RAD;
+  const ascendingNode = finiteNumber(
+    system.orbit?.ascendingNodeDeg,
+    'longitude of ascending node',
+  ) * DEG_TO_RAD;
+  const direction = latitudeArgument => addScaledBasis(
+    basis.north,
+    Math.cos(ascendingNode) * Math.cos(latitudeArgument)
+      - Math.sin(ascendingNode) * Math.sin(latitudeArgument) * Math.cos(inclination),
+    basis.east,
+    Math.sin(ascendingNode) * Math.cos(latitudeArgument)
+      + Math.cos(ascendingNode) * Math.sin(latitudeArgument) * Math.cos(inclination),
+    basis.away,
+    Math.sin(latitudeArgument) * Math.sin(inclination),
+  );
+  const a = direction(0);
+  const b = direction(Math.PI / 2);
+  const normal = [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+  const length = Math.hypot(normal[0], normal[1], normal[2]);
+  return [normal[0] / length, normal[1] / length, normal[2] / length];
 }
 
 /** Whether an incoming null ray from infinity is below the capture threshold. */

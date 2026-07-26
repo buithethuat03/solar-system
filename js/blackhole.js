@@ -8,166 +8,54 @@
 // ============================================================================
 import * as THREE from 'three';
 import * as Physics from './blackhole-physics.js';
+import {
+  LUT_WIDTH,
+  LUT_HEIGHT,
+  LUT_R_MIN,
+  LUT_R_MAX,
+  LUT_SAMPLE_MIN,
+  LUT_SAMPLE_SPLIT,
+  LUT_LOOKUP_SPLIT,
+  CRITICAL_IMPACT_OVER_M,
+  DISK_LUT_WIDTH,
+  DISK_LUT_HEIGHT,
+} from './blackhole-lut-constants.js';
+import {
+  FULLSCREEN_VERTEX,
+  BACKDROP_VERTEX,
+  DISK_BLACKBODY_MIN_K,
+  DISK_BLACKBODY_MAX_K,
+  buildLensingFragment,
+  buildCompositeFragment,
+  buildDownsampleFragment,
+  buildUpsampleFragment,
+  buildBackdropFragment,
+} from './blackhole-shaders.js';
 
 const J2000_JD = 2451545.0;
 const AU_PER_SOLAR_RADIUS = 0.00465046726096;
 const DEFAULT_OBSERVER_RADIUS_OVER_M = 30;
 const CLOSEUP_FOV_DEG = 55;
-const LUT_WIDTH = 512;
-const LUT_HEIGHT = 512;
-const LUT_R_MIN = 6;
-const LUT_R_MAX = 100;
+// Planckian reference spectrum for the display-mapped sky's chromatic
+// blueshift (~solar photosphere); the companion uses its own measured Teff.
+const BLUESHIFT_REFERENCE_TEMPERATURE_K = 5800;
+// The camera-centred Gaia backdrop sphere must sit inside the overview far
+// plane, which in turn covers the 50 AU dolly limit (grep-locked by tests).
+const BACKDROP_RADIUS_AU = 40;
+const OVERVIEW_FAR_AU = 60;
+// Labeled slow-motion clock for the illustrative disk's differential shear
+// (the real ISCO period of 9.27 Msun is ~4.2 ms — invisible in real time).
+// The relative Omega ~ r^-3/2 shear between radii stays exact.
+const DISK_TIME_SCALE = 15;
 // The table is centre-sampled, so interactive dolly stays inside its first and
 // last physical rows instead of clamping an exact endpoint to a nearby row.
 const OBSERVER_RADIUS_MIN_OVER_M = LUT_R_MIN + (LUT_R_MAX - LUT_R_MIN) * 0.5 / LUT_HEIGHT;
 const OBSERVER_RADIUS_MAX_OVER_M = LUT_R_MAX - (LUT_R_MAX - LUT_R_MIN) * 0.5 / LUT_HEIGHT;
-const LUT_SAMPLE_MIN = 1e-6;
-const LUT_SAMPLE_SPLIT = 0.08;
-// C1 join between the logarithmic near-critical and linear broad-field LUT
-// coordinates; must match tools/generate_blackhole_lut.mjs exactly.
-const LUT_LOOKUP_SPLIT = 0.49538788727464705;
-const CRITICAL_IMPACT_OVER_M = 3 * Math.sqrt(3);
 const GALACTIC_FROM_ICRS = Object.freeze([
   [-0.0548755604, -0.8734370902, -0.4838350155],
   [ 0.4941094279, -0.4448296300,  0.7469822445],
   [-0.8676661490, -0.1980763734,  0.4559837762],
 ]);
-
-const FULLSCREEN_VERTEX = /* glsl */ `
-  precision highp float;
-  in vec3 position;
-  in vec2 uv;
-  out vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = vec4(position.xy, 0.0, 1.0);
-  }
-`;
-
-const LENSING_FRAGMENT = /* glsl */ `
-  precision highp float;
-  precision highp sampler2D;
-
-  in vec2 vUv;
-  out vec4 outColor;
-
-  uniform sampler2D uDeflectionLut;
-  uniform sampler2D uSky;
-  uniform vec3 uObserverDir;
-  uniform vec3 uCameraRight;
-  uniform vec3 uCameraUp;
-  uniform vec3 uEqX;
-  uniform vec3 uEqY;
-  uniform vec3 uEqZ;
-  uniform vec3 uCompanionDir;
-  uniform vec3 uCompanionColor;
-  uniform float uCompanionAngularRadius;
-  uniform float uObserverRadiusOverM;
-  uniform float uAspect;
-  uniform float uTanHalfFov;
-
-  const float PI = 3.1415926535897932384626433832795;
-  const float B_CRIT = 5.1961524227066318806;
-  const float R_MIN = 6.0;
-  const float R_MAX = 100.0;
-  const float S_MIN = 0.000001;
-  const float S_SPLIT = 0.08;
-  const float Q_SPLIT = 0.49538788727464705;
-  const ivec2 LUT_SIZE = ivec2(512, 512);
-
-  vec3 srgbToLinear(vec3 color) {
-    vec3 low = color / 12.92;
-    vec3 high = pow((color + 0.055) / 1.055, vec3(2.4));
-    return mix(low, high, step(vec3(0.04045), color));
-  }
-
-  float lookupCoordinate(float s) {
-    if (s <= S_SPLIT) {
-      if (s <= S_MIN) return 0.0;
-      return Q_SPLIT * log(s / S_MIN) / log(S_SPLIT / S_MIN);
-    }
-    return Q_SPLIT + (1.0 - Q_SPLIT) * (s - S_SPLIT) / (1.0 - S_SPLIT);
-  }
-
-  vec2 sampleLutBilinear(vec2 uv) {
-    vec2 pixel = uv * vec2(LUT_SIZE) - 0.5;
-    ivec2 i0 = clamp(ivec2(floor(pixel)), ivec2(0), LUT_SIZE - 1);
-    ivec2 i1 = min(i0 + 1, LUT_SIZE - 1);
-    vec2 f = clamp(fract(pixel), 0.0, 1.0);
-    vec2 a = texelFetch(uDeflectionLut, ivec2(i0.x, i0.y), 0).rg;
-    vec2 b = texelFetch(uDeflectionLut, ivec2(i1.x, i0.y), 0).rg;
-    vec2 c = texelFetch(uDeflectionLut, ivec2(i0.x, i1.y), 0).rg;
-    vec2 d = texelFetch(uDeflectionLut, ivec2(i1.x, i1.y), 0).rg;
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  vec2 gaiaEquirectangularUv(vec3 sceneDirection) {
-    vec3 eq = vec3(
-      dot(sceneDirection, uEqX),
-      dot(sceneDirection, uEqY),
-      dot(sceneDirection, uEqZ)
-    );
-    vec3 gal = vec3(
-      -0.0548755604 * eq.x - 0.8734370902 * eq.y - 0.4838350155 * eq.z,
-       0.4941094279 * eq.x - 0.4448296300 * eq.y + 0.7469822445 * eq.z,
-      -0.8676661490 * eq.x - 0.1980763734 * eq.y + 0.4559837762 * eq.z
-    );
-    gal = normalize(gal);
-    float longitude = -atan(gal.y, gal.x); // astronomical longitude grows left
-    float latitude = asin(clamp(gal.z, -1.0, 1.0));
-    return vec2(fract(longitude / (2.0 * PI) + 0.5), latitude / PI + 0.5);
-  }
-
-  void main() {
-    vec2 screen = vUv * 2.0 - 1.0;
-    vec3 ray = normalize(
-      -uObserverDir
-      + uCameraRight * (screen.x * uAspect * uTanHalfFov)
-      + uCameraUp * (screen.y * uTanHalfFov)
-    );
-
-    float cosAlpha = clamp(dot(ray, -uObserverDir), -1.0, 1.0);
-    float alpha = acos(cosAlpha);
-    float shadow = asin(clamp(
-      B_CRIT * sqrt(1.0 - 2.0 / uObserverRadiusOverM) / uObserverRadiusOverM,
-      0.0, 1.0
-    ));
-
-    // Captured null geodesics end at the horizon. The black region is not a
-    // mesh or a texture and no artificial rim is added at this branch.
-    if (alpha <= shadow) {
-      outColor = vec4(0.0, 0.0, 0.0, 1.0);
-      return;
-    }
-
-    float s = sqrt(clamp((alpha - shadow) / (0.5 * PI - shadow), 0.0, 1.0));
-    float q = lookupCoordinate(s);
-    float rCoordinate = clamp(
-      (uObserverRadiusOverM - R_MIN) / (R_MAX - R_MIN), 0.0, 1.0
-    );
-    float phi = sampleLutBilinear(vec2(q, rCoordinate)).r;
-
-    vec3 tangent = normalize(ray + uObserverDir * cosAlpha);
-    vec3 sourceDirection = normalize(
-      uObserverDir * cos(phi) + tangent * sin(phi)
-    );
-
-    vec3 sky = srgbToLinear(texture(uSky, gaiaEquirectangularUv(sourceDirection)).rgb);
-
-    // At ~1 AU the companion is millions of M from the close observer, so its
-    // finite angular disc is accurately treated as a directional source before
-    // the same geodesic mapping. Surface brightness is conserved by lensing.
-    float sourceSeparation = acos(clamp(dot(sourceDirection, uCompanionDir), -1.0, 1.0));
-    float edgeWidth = max(fwidth(sourceSeparation), 0.00002);
-    float companion = 1.0 - smoothstep(
-      uCompanionAngularRadius - edgeWidth,
-      uCompanionAngularRadius + edgeWidth,
-      sourceSeparation
-    );
-    vec3 color = mix(sky, uCompanionColor, companion);
-    outColor = vec4(color, 1.0);
-  }
-`;
 
 function quantityValue(quantity, fallback = NaN) {
   const value = typeof quantity === 'number' ? quantity : quantity?.value;
@@ -208,6 +96,24 @@ function blackbodySrgb(temperatureK) {
   return new THREE.Color().setRGB(
     clampByte(r), clampByte(g), clampByte(b), THREE.SRGBColorSpace,
   );
+}
+
+// Prebaked radial gradient for the companion's display-only glow sprites
+// (the same pattern the orrery Sun uses; tinted via the sprite material).
+function makeCompanionGlowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const context = canvas.getContext('2d');
+  const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.2, 'rgba(255,244,224,0.65)');
+  gradient.addColorStop(0.55, 'rgba(255,232,190,0.18)');
+  gradient.addColorStop(1, 'rgba(255,224,160,0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 256, 256);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 function createReticleGeometry(radius = 4.5) {
@@ -307,16 +213,26 @@ export function createBlackHoleView(ctx) {
   let adaptiveScale = 1;
   let qualityFrameCount = 0;
   let qualityTime = 0;
+  let upscaleCrisp = false;
   let fallbackDirty = true;
   let fallbackLastRender = 0;
   let fallbackActive = false;
   let fallbackReason = '';
   let assetsPromise = null;
   let assetState = null;
+  let skyTexturePromise = null;
+  let sharedSkyTexture = null;
   let closeupGpu = null;
   let closeupTarget = null;
+  let closeupHdr = false;
   let targetWidth = 0;
   let targetHeight = 0;
+  let diskEnabled = false;
+  try {
+    diskEnabled = localStorage.getItem('solar.bhDisk') === '1';
+  } catch { /* private-mode storage stays off */ }
+  let diskAssetsPromise = null;
+  let diskState = null;
 
   const saved = {
     valid: false,
@@ -354,10 +270,11 @@ export function createBlackHoleView(ctx) {
           <p class="bh-overview-evidence">${message('bhOverviewEvidence', 'The black hole is not seen directly here: its evidence is the measured motion of the luminous star around a 9.27 M☉ dark mass.')}</p>
         </div>
         <div class="bh-overview-legend" aria-label="${message('bhOverviewLegend', 'Diagram legend')}">
-          <span><i class="bh-key bh-key-star"></i>${message('bhLegendCompanion', 'Companion star · physical radius')}</span>
+          <span><i class="bh-key bh-key-star"></i>${message('bhLegendCompanion', 'Companion star · physical radius (glow is display-only)')}</span>
           <span><i class="bh-key bh-key-black-hole"></i>${message('bhLegendBlackHole', 'Black-hole position')}</span>
           <span><i class="bh-key bh-key-barycentre"></i>${message('bhLegendBarycentre', 'Shared barycentre')}</span>
           <span><i class="bh-key bh-key-orbits"></i>${message('bhLegendOrbits', 'Barycentric orbit paths')}</span>
+          <span><i class="bh-key bh-key-sky"></i>${message('bhLegendSky', 'Sky backdrop · ESA Gaia reference sky (display-mapped)')}</span>
         </div>
         <p class="bh-mode-note">${message('bhOverviewScaleNote', 'The companion, orbit and event horizon share one true-scale ruler. The horizon is rendered at physical size; the locator is needed because it is normally sub-pixel.')}</p>
         <div class="bh-screen-scale" aria-label="${message('bhScreenScale', 'On-screen scale at the barycentre')}">
@@ -386,6 +303,8 @@ export function createBlackHoleView(ctx) {
             <input id="bh-observer-radius" type="range" min="0" max="1000" step="1" />
             <small>${message('bhObserverZoomHint', 'Physical dolly range covered by the geodesic table: 6.09–99.91 GM/c².')}</small>
           </label>
+          <label class="bh-check bh-disk-row"><input id="bh-disk-toggle" type="checkbox" /><span>${message('bhDiskToggle', 'Illustrative accretion disk (none detected — model)')}</span></label>
+          <small class="bh-disk-hint">${message('bhDiskHint', 'Off by default: no accretion emission is detected at Gaia BH1.')}</small>
           <label>${message('bhQuality', 'Render quality')}
             <select id="bh-quality">
               <option value="auto">${message('bhQualityAuto', 'Auto')}</option>
@@ -394,24 +313,33 @@ export function createBlackHoleView(ctx) {
               <option value="low">${message('bhQualityLow', 'Low · 50%')}</option>
             </select>
           </label>
+          <label>${message('bhExposure', 'Exposure')}
+            <input id="bh-exposure" type="range" min="-2" max="2" step="0.01" value="0" />
+          </label>
+          <label class="bh-check"><input id="bh-upscale-crisp" type="checkbox" /><span>${message('bhUpscaleCrisp', 'Crisp upscale (nearest-neighbour)')}</span></label>
           <button type="button" id="bh-reset-closeup">${message('bhResetView', 'Reset view')}</button>
         </div>
+        <p class="bh-warning" id="bh-disk-caveat" hidden>${message('bhDiskCaveat', 'Illustration, not an observation: Gaia BH1 has no detected accretion emission. This disk is a physically motivated thin-disk model (ISCO–30 GM/c², T ∝ r⁻³ᐟ⁴ with an inner taper, Doppler + gravitational shifts, lensed multiple images) shown only in this opt-in mode.')}</p>
         <div class="bh-readout">
           <span>${message('bhObserverDistance', 'Static observer radius')}</span><output id="bh-observer-distance">—</output>
           <span>${message('bhTimeDilation', 'dτ/dt')}</span><output id="bh-time-dilation">—</output>
+          <span>${message('bhBlueshiftFactor', 'Blueshift factor')}</span><output id="bh-blueshift">—</output>
           <span>${message('bhShadowAngularDiameter', 'Shadow angular diameter')}</span><output id="bh-shadow-angle">—</output>
           <span>${message('bhFieldOfView', 'Vertical field of view')}</span><output>${CLOSEUP_FOV_DEG}°</output>
         </div>
         <p class="bh-warning">${message('bhStaticObserverWarning', 'This is a hypothetical static observer; remaining at any selected radius requires continuous thrust.')}</p>
+        <p class="bh-mode-note">${message('bhBlueshiftNote', 'Received light is blueshifted and brightened by the static-observer factors 1/√(1−2GM/rc²) and (1−2GM/rc²)⁻²; the sky tint uses a Planckian reference spectrum (model).')}</p>
+        <p class="bh-mode-note">${message('bhPsfNote', 'Star glow is a modeled instrument/eye point-spread function applied to the whole image, and the stellar disc uses a linear limb-darkening law (u = 0.6); neither is emission from the black hole.')}</p>
         <p>${message('bhSkyCaveat', 'The Gaia map is a display-mapped reference sky observed from the Solar System. The geodesic geometry is modeled; this is not calibrated photometry or the exact sky at Gaia BH1.')}</p>
         <div class="bh-status" id="bh-status" role="status" aria-live="polite"></div>
       </section>
       <section class="bh-sources" id="bh-sources"></section>
     </main>
-    <div class="bh-reticle" id="bh-reticle" aria-hidden="true"></div>
+    <div class="bh-reticle" id="bh-reticle" aria-hidden="true"><i aria-hidden="true"></i></div>
     <button class="bh-scene-label bh-label-black-hole" id="bh-label-black-hole" type="button" aria-label="${message('bhOpenCloseup', 'Open Schwarzschild close-up')}">${message('bhSceneBlackHole', 'Black hole · physical position')}</button>
     <div class="bh-scene-label bh-label-companion" id="bh-label-companion" aria-hidden="true">${message('bhSceneCompanion', 'G-type companion')}</div>
     <div class="bh-scene-label bh-label-barycentre" id="bh-label-barycentre" aria-hidden="true">${message('bhSceneBarycentre', 'Barycentre')}</div>
+    <div class="bh-scene-label bh-label-shadow" id="bh-label-shadow" aria-hidden="true" hidden>${message('bhShadowRingLabel', 'Shadow diameter · true scale, distant-observer')} · ${schwarzschild.shadowDiameterKm.toFixed(1)} km</div>
   `;
   document.body.appendChild(ui);
 
@@ -424,6 +352,7 @@ export function createBlackHoleView(ctx) {
   const blackHoleLabel = $('#bh-label-black-hole');
   const companionLabel = $('#bh-label-companion');
   const barycentreLabel = $('#bh-label-barycentre');
+  const shadowLabel = $('#bh-label-shadow');
   const overviewLabels = [blackHoleLabel, companionLabel, barycentreLabel];
   const scaleContainer = $('.bh-screen-scale');
   const scaleLine = $('#bh-scale-line');
@@ -437,7 +366,14 @@ export function createBlackHoleView(ctx) {
   const observerRadiusSlider = $('#bh-observer-radius');
   const observerDistanceOutput = $('#bh-observer-distance');
   const timeDilationOutput = $('#bh-time-dilation');
+  const blueshiftOutput = $('#bh-blueshift');
   const shadowAngleOutput = $('#bh-shadow-angle');
+  const exposureSlider = $('#bh-exposure');
+  const crispToggle = $('#bh-upscale-crisp');
+  const diskToggle = $('#bh-disk-toggle');
+  const diskCaveat = $('#bh-disk-caveat');
+  diskToggle.checked = diskEnabled;
+  diskCaveat.hidden = !diskEnabled;
   makeSourceList(
     $('#bh-sources'),
     data,
@@ -460,6 +396,7 @@ export function createBlackHoleView(ctx) {
     const radiusInSchwarzschildRadii = observerRadiusOverM / 2;
     observerDistanceOutput.textContent = `${observerDistanceKm.toFixed(2)} km · ${radiusInSchwarzschildRadii.toFixed(radiusInSchwarzschildRadii < 10 ? 2 : 1)} rₛ`;
     timeDilationOutput.textContent = timeDilation.toFixed(6);
+    blueshiftOutput.textContent = `×${(1 / timeDilation).toFixed(6)}`;
     shadowAngleOutput.textContent = `${THREE.MathUtils.radToDeg(2 * shadowRadius).toFixed(6)}°`;
     observerRadiusSlider.value = String(Math.max(0, Math.min(1000,
       observerRadiusToSlider(observerRadiusOverM))));
@@ -487,6 +424,34 @@ export function createBlackHoleView(ctx) {
   companionMesh.name = 'Gaia BH1 companion (true radius)';
   rig.add(companionMesh);
 
+  // Display-only glow around the physical-radius photosphere (labeled in the
+  // legend). Sprites carry the halo because the bloom composer is bypassed in
+  // this mode; sprite scale is a diameter, so 6x/14x = 3/7 stellar radii.
+  const companionGlowTexture = makeCompanionGlowTexture();
+  const companionGlowInner = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: companionGlowTexture,
+    color: companionColor,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  }));
+  companionGlowInner.scale.setScalar(companionRadius * 6);
+  companionGlowInner.renderOrder = 2;
+  const companionGlowOuter = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: companionGlowTexture,
+    color: companionColor,
+    transparent: true,
+    opacity: 0.3,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  }));
+  companionGlowOuter.scale.setScalar(companionRadius * 14);
+  companionGlowOuter.renderOrder = 2;
+  companionMesh.add(companionGlowInner, companionGlowOuter);
+
   // This sphere is the physical event horizon on exactly the same ruler as the
   // star and orbit. It is intentionally black, non-emissive and not enlarged;
   // the separate locator remains necessary because the sphere is sub-pixel in
@@ -509,6 +474,24 @@ export function createBlackHoleView(ctx) {
   const locatorRing = new THREE.LineLoop(createReticleGeometry(), locatorMaterial);
   locatorRing.renderOrder = 20;
   blackHoleAnchor.add(locatorRing);
+  // True-scale shadow indicator: the critical impact parameter on the same
+  // ruler as everything else. Hidden until it spans a few pixels, then it
+  // crossfades with the DOM locator reticle (an honest apparent size, not a
+  // glow — the distant-observer shadow diameter is exact at these distances).
+  const shadowRingRadiusScene = CRITICAL_IMPACT_OVER_M * gravitationalRadiusScene;
+  const shadowRingMaterial = new THREE.LineBasicMaterial({
+    color: 0xaedcff,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    toneMapped: false,
+  });
+  const shadowRing = new THREE.LineLoop(
+    createReticleGeometry(shadowRingRadiusScene), shadowRingMaterial,
+  );
+  shadowRing.renderOrder = 20;
+  shadowRing.visible = false;
+  blackHoleAnchor.add(shadowRing);
   rig.add(blackHoleAnchor);
 
   const connectorGeometry = new THREE.BufferGeometry();
@@ -516,9 +499,10 @@ export function createBlackHoleView(ctx) {
   const connector = new THREE.Line(connectorGeometry, new THREE.LineBasicMaterial({
     color: 0x7a8da8,
     transparent: true,
-    opacity: 0.24,
+    opacity: 0.28,
     toneMapped: false,
   }));
+  connector.renderOrder = 2;
   rig.add(connector);
 
   function makeOrbitPath(key, color) {
@@ -533,11 +517,12 @@ export function createBlackHoleView(ctx) {
     const material = new THREE.LineBasicMaterial({
       color,
       transparent: true,
-      opacity: key === 'star' ? 0.48 : 0.32,
+      opacity: key === 'star' ? 0.55 : 0.4,
       toneMapped: false,
     });
     const path = new THREE.Line(geometry, material);
     path.name = `${key} barycentric orbit`;
+    path.renderOrder = 2;
     rig.add(path);
     return path;
   }
@@ -549,11 +534,66 @@ export function createBlackHoleView(ctx) {
   const eqX = vectorFromArray(Object.values(Physics.equatorialToSceneDirection(0, 0)));
   const eqY = vectorFromArray(Object.values(Physics.equatorialToSceneDirection(90, 0)));
   const eqZ = vectorFromArray(Object.values(Physics.equatorialToSceneDirection(0, 90)));
+  // Illustrative-disk plane: the measured binary orbital plane (the only
+  // measured plane in the system), prograde with the binary; the reference
+  // direction just anchors the material pattern's azimuth.
+  const diskPlaneNormal = new THREE.Vector3(...Physics.binaryOrbitalPlaneNormal(data));
+  const diskPlaneSeed = Math.abs(diskPlaneNormal.y) < 0.9
+    ? new THREE.Vector3(0, 1, 0)
+    : new THREE.Vector3(1, 0, 0);
+  const diskReferenceDir = new THREE.Vector3()
+    .crossVectors(diskPlaneNormal, diskPlaneSeed).normalize();
   const earthToSystem = vectorFromArray(Object.values(Physics.equatorialToSceneDirection(
     quantityValue(data.coordinates?.raDeg),
     quantityValue(data.coordinates?.decDeg ?? data.coordinates?.declinationDeg),
   )));
   const earthLineObserver = earthToSystem.clone().negate();
+
+  // ------------------------------------------------------ overview backdrop
+  // Camera-centred BackSide sphere sampling the same Gaia map through the
+  // same GLSL chunk as the lensing shader, so the two tabs agree by
+  // construction; the travel sequence crossfades it over the Solar System's
+  // Milky Way/starfield via renderOrder (stars 0 < backdrop 1 < rig 2).
+  // Never parent it to the rig: early in travel the rig sits at ~3.7e12
+  // units, far beyond Float32 precision for a 1.5e6-unit shell.
+  let backdropOpacity = 1;
+  let skyReady = false;
+  const backdropMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uSky: { value: null },
+      uOpacity: { value: 1 },
+      uEqX: { value: eqX.clone() },
+      uEqY: { value: eqY.clone() },
+      uEqZ: { value: eqZ.clone() },
+    },
+    vertexShader: BACKDROP_VERTEX,
+    fragmentShader: buildBackdropFragment(),
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    // toneMapped stays true: the include chunks apply the renderer's ACES and
+    // output encoding, matching both the orrery materials it fades over and
+    // the close-up composite at exposure 1. Keep it that way.
+  });
+  const backdrop = new THREE.Mesh(
+    new THREE.SphereGeometry(BACKDROP_RADIUS_AU * sceneUnitsPerAU, 48, 24),
+    backdropMaterial,
+  );
+  backdrop.name = 'Gaia BH1 reference-sky backdrop';
+  backdrop.frustumCulled = false;
+  backdrop.renderOrder = 1;
+  backdrop.visible = false;
+  scene.add(backdrop);
+
+  function syncBackdropVisibility() {
+    backdrop.visible = active && mode === 'overview' && skyReady && backdropOpacity > 0.001;
+  }
+
+  function setBackdropFade(alpha) {
+    backdropOpacity = Math.max(0, Math.min(1, Number(alpha) || 0));
+    backdropMaterial.uniforms.uOpacity.value = backdropOpacity;
+    syncBackdropVisibility();
+  }
 
   const tmpCompanion = new THREE.Vector3();
   const tmpBlackHole = new THREE.Vector3();
@@ -585,7 +625,11 @@ export function createBlackHoleView(ctx) {
     separationOutput.textContent = `${orbitState.separationAU.toFixed(5)} AU`;
     phaseOutput.textContent = `${(orbitState.phase * 100).toFixed(2)}% · JD ${orbitState.observationJulianDate.toFixed(2)}`;
 
-    if (closeupGpu) updateCompanionUniforms();
+    if (closeupGpu) {
+      updateCompanionUniforms();
+      // Wrapped to keep float32 precision on the labeled slow-motion clock.
+      closeupGpu.uniforms.uDiskTime.value = (currentSimDays * DISK_TIME_SCALE) % 6283.185307;
+    }
     fallbackDirty = true;
   }
 
@@ -631,15 +675,36 @@ export function createBlackHoleView(ctx) {
     if (!active || mode !== 'overview') {
       reticleElement.hidden = true;
       overviewLabels.forEach(label => { label.hidden = true; });
+      shadowLabel.hidden = true;
+      shadowRing.visible = false;
       scaleContainer.hidden = true;
       return;
     }
     locatorRing.quaternion.copy(camera.quaternion);
+    shadowRing.quaternion.copy(camera.quaternion);
     const rect = renderer.domElement.getBoundingClientRect();
     placeOverviewOverlay(reticleElement, blackHoleAnchor, rect);
     placeOverviewOverlay(blackHoleLabel, blackHoleAnchor, rect);
     placeOverviewOverlay(companionLabel, companionMesh, rect);
     placeOverviewOverlay(barycentreLabel, rig, rect);
+
+    // Crossfade the screen-space locator against the true-scale shadow ring
+    // once the ring's honest apparent size reaches a few pixels.
+    blackHoleAnchor.getWorldPosition(tmpOverlayWorld);
+    const anchorDistance = camera.position.distanceTo(tmpOverlayWorld);
+    const ringPixels = shadowRingRadiusScene / Math.max(anchorDistance, 1e-12)
+      * (rect.height * 0.5)
+      / Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+    const ringRamp = THREE.MathUtils.smoothstep(ringPixels, 4, 10);
+    shadowRingMaterial.opacity = 0.72 * ringRamp;
+    shadowRing.visible = ringRamp > 0.001;
+    reticleElement.style.opacity = String(1 - ringRamp);
+    if (ringRamp > 0.001) {
+      placeOverviewOverlay(shadowLabel, blackHoleAnchor, rect);
+      shadowLabel.style.opacity = String(ringRamp);
+    } else {
+      shadowLabel.hidden = true;
+    }
     updateScreenScale(rect);
   }
 
@@ -697,7 +762,7 @@ export function createBlackHoleView(ctx) {
   function configureCommonCamera() {
     camera.aspect = viewportWidth / viewportHeight;
     camera.near = Math.max(horizonRadiusScene * 0.02, 1e-8);
-    camera.far = sceneUnitsPerAU * 50;
+    camera.far = sceneUnitsPerAU * OVERVIEW_FAR_AU;
     camera.fov = CLOSEUP_FOV_DEG;
     camera.zoom = 1;
     camera.updateProjectionMatrix();
@@ -743,9 +808,7 @@ export function createBlackHoleView(ctx) {
       .add(controls.target);
     camera.lookAt(controls.target);
     controls.update();
-    if (closeupGpu) {
-      closeupGpu.uniforms.uObserverRadiusOverM.value = observerRadiusOverM;
-    }
+    updateShadowUniforms();
     updateObserverReadouts();
     fallbackDirty = true;
   }
@@ -760,9 +823,7 @@ export function createBlackHoleView(ctx) {
       updateObserverReadouts();
       fallbackDirty = true;
     }
-    if (closeupGpu) {
-      closeupGpu.uniforms.uObserverRadiusOverM.value = observerRadiusOverM;
-    }
+    updateShadowUniforms();
   }
 
   function placeCloseupObserver(direction, preset, radiusOverM = observerRadiusOverM) {
@@ -783,9 +844,7 @@ export function createBlackHoleView(ctx) {
     controls.update();
     setPresetButtonState(preset);
     updateObserverReadouts();
-    if (closeupGpu) {
-      closeupGpu.uniforms.uObserverRadiusOverM.value = observerRadiusOverM;
-    }
+    updateShadowUniforms();
     fallbackDirty = true;
   }
 
@@ -808,12 +867,41 @@ export function createBlackHoleView(ctx) {
     });
   }
 
+  // The Gaia sky texture is shared by the close-up lensing pass and the
+  // overview backdrop, so it is loaded and configured exactly once.
+  // tools/test_blackhole.mjs greps the configuration literals below.
+  function ensureSkyTexture() {
+    if (!skyTexturePromise) {
+      const skyUrl = new URL('../textures/blackhole/gaia_sky_equirectangular.jpg', import.meta.url);
+      skyTexturePromise = loadTexture(skyUrl.href).then((skyTexture) => {
+        // Hardware sRGB decode so trilinear/anisotropic filtering happens on
+        // decoded values (WebGL2 core renders and mipmaps SRGB8_ALPHA8).
+        skyTexture.colorSpace = THREE.SRGBColorSpace;
+        skyTexture.wrapS = THREE.RepeatWrapping;
+        skyTexture.wrapT = THREE.ClampToEdgeWrapping;
+        skyTexture.minFilter = THREE.LinearMipmapLinearFilter;
+        skyTexture.magFilter = THREE.LinearFilter;
+        skyTexture.generateMipmaps = true;
+        skyTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        if (disposed) {
+          skyTexture.dispose();
+        } else {
+          sharedSkyTexture = skyTexture;
+          backdropMaterial.uniforms.uSky.value = skyTexture;
+          skyReady = true;
+          syncBackdropVisibility();
+        }
+        return skyTexture;
+      });
+    }
+    return skyTexturePromise;
+  }
+
   async function loadCloseupAssets() {
     const lutUrl = new URL('../textures/blackhole/schwarzschild-lut-512x512-rg32f.bin', import.meta.url);
-    const skyUrl = new URL('../textures/blackhole/gaia_sky_equirectangular.jpg', import.meta.url);
     const [response, skyTexture] = await Promise.all([
       fetch(lutUrl),
-      loadTexture(skyUrl.href),
+      ensureSkyTexture(),
     ]);
     if (!response.ok) throw new Error(`Schwarzschild LUT HTTP ${response.status}`);
     const buffer = await response.arrayBuffer();
@@ -821,16 +909,10 @@ export function createBlackHoleView(ctx) {
     if (buffer.byteLength !== expectedBytes) {
       throw new Error(`Schwarzschild LUT has ${buffer.byteLength} bytes; expected ${expectedBytes}`);
     }
-    skyTexture.colorSpace = THREE.NoColorSpace;
-    skyTexture.wrapS = THREE.RepeatWrapping;
-    skyTexture.wrapT = THREE.ClampToEdgeWrapping;
-    skyTexture.minFilter = THREE.LinearFilter;
-    skyTexture.magFilter = THREE.LinearFilter;
-    skyTexture.generateMipmaps = true;
     return { lutValues: new Float32Array(buffer), skyTexture };
   }
 
-  function createCloseupGpu(assets) {
+  function createCloseupGpu(assets, hdr) {
     const lutTexture = new THREE.DataTexture(
       assets.lutValues,
       LUT_WIDTH,
@@ -862,12 +944,30 @@ export function createBlackHoleView(ctx) {
       uObserverRadiusOverM: { value: observerRadiusOverM },
       uAspect: { value: viewportWidth / viewportHeight },
       uTanHalfFov: { value: Math.tan(THREE.MathUtils.degToRad(CLOSEUP_FOV_DEG * 0.5)) },
+      uSinShadow: { value: 0 },
+      uCosShadow: { value: 1 },
+      uInvAlphaRange: { value: 1 },
+      uPixelStep: { value: 0.001 },
+      uBlueshiftTint: { value: new THREE.Vector3(1, 1, 1) },
+      uBlueshiftIntensity: { value: 1 },
+      // Illustrative-disk uniforms (only the BH_DISK material variant reads
+      // them; sharing one uniforms object keeps both variants in sync).
+      uTrajectoryLut: { value: null },
+      uFamilyLut: { value: null },
+      uObserverLut: { value: null },
+      uBlackbody: { value: null },
+      uDiskNormal: { value: diskPlaneNormal.clone() },
+      uDiskRef0: { value: diskReferenceDir.clone() },
+      uShadowAngle: { value: 0.2 },
+      uDiskOuterR: { value: 30 },
+      uDiskIntensity: { value: 1.9 },
+      uDiskTime: { value: 0 },
     };
     const material = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3,
       uniforms,
       vertexShader: FULLSCREEN_VERTEX,
-      fragmentShader: LENSING_FRAGMENT,
+      fragmentShader: buildLensingFragment({ hdr }),
       depthTest: false,
       depthWrite: false,
       toneMapped: false,
@@ -878,28 +978,255 @@ export function createBlackHoleView(ctx) {
     const quad = new THREE.Mesh(quadGeometry, material);
     quad.frustumCulled = false;
     fullscreenScene.add(quad);
+    const lensingQuad = quad;
 
-    const blitScene = new THREE.Scene();
-    const blitMaterial = new THREE.MeshBasicMaterial({
-      map: null,
+    // Composite: exposure -> the same ACES fit the orrery uses -> sRGB with
+    // one dither step (or a plain blit when the lensing pass wrote sRGB8).
+    const compositeUniforms = {
+      uScene: { value: null },
+      uBloom: { value: null },
+      uPsfWeight: { value: 0 },
+      uExposure: { value: 1 },
+    };
+    const compositeScene = new THREE.Scene();
+    const compositeMaterial = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: compositeUniforms,
+      vertexShader: FULLSCREEN_VERTEX,
+      fragmentShader: buildCompositeFragment({ hdr }),
       depthTest: false,
       depthWrite: false,
       toneMapped: false,
     });
-    const blitQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blitMaterial);
-    blitQuad.frustumCulled = false;
-    blitScene.add(blitQuad);
+    const compositeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), compositeMaterial);
+    compositeQuad.frustumCulled = false;
+    compositeScene.add(compositeQuad);
+
+    // PSF blur pyramid (HDR path only): one shared quad whose material is
+    // swapped between the down/upsample passes each frame.
+    let bloom = null;
+    if (hdr) {
+      const downMaterial = new THREE.RawShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        uniforms: {
+          uSource: { value: null },
+          uHalfTexel: { value: new THREE.Vector2() },
+        },
+        vertexShader: FULLSCREEN_VERTEX,
+        fragmentShader: buildDownsampleFragment(),
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const upMaterial = new THREE.RawShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        uniforms: {
+          uSource: { value: null },
+          uAdd: { value: null },
+          uHalfTexel: { value: new THREE.Vector2() },
+        },
+        vertexShader: FULLSCREEN_VERTEX,
+        fragmentShader: buildUpsampleFragment(),
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const bloomScene = new THREE.Scene();
+      const bloomQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), downMaterial);
+      bloomQuad.frustumCulled = false;
+      bloomScene.add(bloomQuad);
+      bloom = {
+        downMaterial,
+        upMaterial,
+        scene: bloomScene,
+        quad: bloomQuad,
+        geometry: bloomQuad.geometry,
+        downs: [],
+        ups: [],
+      };
+    }
     return {
       lutTexture,
       uniforms,
       material,
+      lensingQuad,
       fullscreenScene,
       fullscreenCamera,
       quadGeometry,
-      blitScene,
-      blitMaterial,
-      blitGeometry: blitQuad.geometry,
+      compositeScene,
+      compositeMaterial,
+      compositeUniforms,
+      compositeGeometry: compositeQuad.geometry,
+      bloom,
     };
+  }
+
+  // ------------------------------------------------- illustrative disk GPU
+  function applyLensingMaterial() {
+    if (!closeupGpu) return;
+    closeupGpu.lensingQuad.material = diskEnabled && diskState
+      ? diskState.material
+      : closeupGpu.material;
+  }
+
+  function makeDiskDataTexture(values, width, height) {
+    const texture = new THREE.DataTexture(values, width, height,
+      THREE.RGFormat, THREE.FloatType);
+    texture.internalFormat = 'RG32F';
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
+    texture.flipY = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  // 1D Planckian-locus ramp built from the same blackbodySrgb helper the rest
+  // of the module uses; hardware sRGB decode returns linear values in-shader.
+  function makeBlackbodyTexture() {
+    const size = 256;
+    const data = new Uint8Array(size * 4);
+    for (let i = 0; i < size; i++) {
+      const temperature = DISK_BLACKBODY_MIN_K
+        + (DISK_BLACKBODY_MAX_K - DISK_BLACKBODY_MIN_K) * i / (size - 1);
+      const color = blackbodySrgb(temperature).convertLinearToSRGB();
+      data[4 * i] = Math.round(color.r * 255);
+      data[4 * i + 1] = Math.round(color.g * 255);
+      data[4 * i + 2] = Math.round(color.b * 255);
+      data[4 * i + 3] = 255;
+    }
+    const texture = new THREE.DataTexture(data, size, 1,
+      THREE.RGBAFormat, THREE.UnsignedByteType);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  async function fetchDiskTable(fileName, expectedScalars) {
+    const url = new URL(`../textures/blackhole/${fileName}`, import.meta.url);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${fileName} HTTP ${response.status}`);
+    const buffer = await response.arrayBuffer();
+    const expectedBytes = expectedScalars * Float32Array.BYTES_PER_ELEMENT;
+    if (buffer.byteLength !== expectedBytes) {
+      throw new Error(`${fileName} has ${buffer.byteLength} bytes; expected ${expectedBytes}`);
+    }
+    return new Float32Array(buffer);
+  }
+
+  // Lazy: the ~4 MiB of disk tables download only on the first opt-in.
+  function ensureDiskAssets() {
+    if (diskAssetsPromise) return diskAssetsPromise;
+    statusElement.textContent = message('bhDiskLoading', 'Loading disk geodesic tables…');
+    diskAssetsPromise = Promise.all([
+      fetchDiskTable('schwarzschild-disk-trajectory-512x512-rg32f.bin',
+        DISK_LUT_WIDTH * DISK_LUT_HEIGHT * 2),
+      fetchDiskTable('schwarzschild-disk-families-512x1-rg32f.bin',
+        DISK_LUT_HEIGHT * 2),
+      fetchDiskTable('schwarzschild-disk-observer-512x512-rg32f.bin',
+        DISK_LUT_WIDTH * DISK_LUT_HEIGHT * 2),
+    ]).then(([trajectoryValues, familyValues, observerValues]) => {
+      if (disposed || !closeupGpu) return null;
+      const state = {
+        trajectoryTexture: makeDiskDataTexture(trajectoryValues, DISK_LUT_WIDTH, DISK_LUT_HEIGHT),
+        familyTexture: makeDiskDataTexture(familyValues, DISK_LUT_HEIGHT, 1),
+        observerTexture: makeDiskDataTexture(observerValues, DISK_LUT_WIDTH, DISK_LUT_HEIGHT),
+        blackbodyTexture: makeBlackbodyTexture(),
+        material: null,
+      };
+      closeupGpu.uniforms.uTrajectoryLut.value = state.trajectoryTexture;
+      closeupGpu.uniforms.uFamilyLut.value = state.familyTexture;
+      closeupGpu.uniforms.uObserverLut.value = state.observerTexture;
+      closeupGpu.uniforms.uBlackbody.value = state.blackbodyTexture;
+      state.material = new THREE.RawShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        uniforms: closeupGpu.uniforms,
+        vertexShader: FULLSCREEN_VERTEX,
+        fragmentShader: buildLensingFragment({ hdr: closeupHdr, disk: true }),
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      let shaderError = null;
+      const previousShaderErrorHandler = renderer.debug.onShaderError;
+      renderer.debug.onShaderError = (...args) => {
+        shaderError = new Error('The illustrative-disk shader did not compile');
+        if (typeof previousShaderErrorHandler === 'function') previousShaderErrorHandler(...args);
+      };
+      try {
+        closeupGpu.lensingQuad.material = state.material;
+        renderer.compile(closeupGpu.fullscreenScene, closeupGpu.fullscreenCamera);
+      } finally {
+        closeupGpu.lensingQuad.material = closeupGpu.material;
+        renderer.debug.onShaderError = previousShaderErrorHandler;
+      }
+      if (shaderError) throw shaderError;
+      diskState = state;
+      statusElement.textContent = message('bhDiskReady',
+        'Illustrative disk ready · model, not an observation');
+      applyLensingMaterial();
+      return state;
+    }).catch((error) => {
+      diskAssetsPromise = null;
+      diskEnabled = false;
+      diskToggle.checked = false;
+      diskCaveat.hidden = true;
+      statusElement.textContent = `${message('bhAssetError', 'Unable to load local lensing assets')}: ${error.message}`;
+      return null;
+    });
+    return diskAssetsPromise;
+  }
+
+  function setDiskEnabled(enabled) {
+    diskEnabled = Boolean(enabled);
+    try {
+      localStorage.setItem('solar.bhDisk', diskEnabled ? '1' : '0');
+    } catch { /* private-mode storage stays off */ }
+    diskCaveat.hidden = !diskEnabled;
+    if (diskEnabled) ensureDiskAssets();
+    applyLensingMaterial();
+  }
+
+  // The shadow terms feeding the shader's stable sin(alpha - shadow) path are
+  // computed here in float64 whenever the observer radius changes, together
+  // with the static-observer reception factors of the same radius.
+  function updateShadowUniforms() {
+    if (!closeupGpu) return;
+    const sinShadow = Math.min(1, CRITICAL_IMPACT_OVER_M
+      * Math.sqrt(1 - 2 / observerRadiusOverM) / observerRadiusOverM);
+    closeupGpu.uniforms.uObserverRadiusOverM.value = observerRadiusOverM;
+    closeupGpu.uniforms.uSinShadow.value = sinShadow;
+    closeupGpu.uniforms.uCosShadow.value = Math.sqrt(Math.max(0, 1 - sinShadow * sinShadow));
+    closeupGpu.uniforms.uShadowAngle.value = Math.asin(sinShadow);
+    closeupGpu.uniforms.uInvAlphaRange.value = 1 / (Math.PI / 2 - Math.asin(sinShadow));
+
+    // Gravitational blueshift of received light. The sky's per-pixel spectra
+    // are unknown (display-mapped image), so its chromatic shift uses a
+    // Planckian reference spectrum: a blackbody at T blueshifts exactly to a
+    // blackbody at g*T. The companion's measured Teff is known, so its colour
+    // and g^4 intensity gain are applied exactly.
+    const blueshift = Physics.gravitationalBlueshiftFactor(observerRadiusOverM);
+    const intensity = Physics.receivedBolometricIntensityFactor(observerRadiusOverM);
+    const reference = blackbodySrgb(BLUESHIFT_REFERENCE_TEMPERATURE_K);
+    const shifted = blackbodySrgb(BLUESHIFT_REFERENCE_TEMPERATURE_K * blueshift);
+    const tint = closeupGpu.uniforms.uBlueshiftTint.value;
+    tint.set(
+      shifted.r / Math.max(1e-6, reference.r),
+      shifted.g / Math.max(1e-6, reference.g),
+      shifted.b / Math.max(1e-6, reference.b),
+    );
+    const tintLuminance = 0.2126 * tint.x + 0.7152 * tint.y + 0.0722 * tint.z;
+    tint.divideScalar(Math.max(1e-6, tintLuminance));
+    closeupGpu.uniforms.uBlueshiftIntensity.value = intensity;
+    const companionTeff = quantityValue(data.companion?.effectiveTemperatureK, 5850);
+    closeupGpu.uniforms.uCompanionColor.value
+      .copy(blackbodySrgb(companionTeff * blueshift))
+      .multiplyScalar(companionLuminosity * intensity);
   }
 
   function updateCompanionUniforms() {
@@ -923,7 +1250,11 @@ export function createBlackHoleView(ctx) {
       assetState = assets;
       if (renderer.capabilities.isWebGL2) {
         try {
-          closeupGpu = createCloseupGpu(assets);
+          // With EXT_color_buffer_float the lensing pass renders open-range
+          // linear HDR into a HalfFloat target; without it the shader encodes
+          // dithered sRGB into 8 bits directly (band-free either way).
+          closeupHdr = renderer.extensions.has('EXT_color_buffer_float');
+          closeupGpu = createCloseupGpu(assets, closeupHdr);
           let shaderError = null;
           const previousShaderErrorHandler = renderer.debug.onShaderError;
           renderer.debug.onShaderError = (...args) => {
@@ -932,11 +1263,22 @@ export function createBlackHoleView(ctx) {
           };
           try {
             renderer.compile(closeupGpu.fullscreenScene, closeupGpu.fullscreenCamera);
+            renderer.compile(closeupGpu.compositeScene, closeupGpu.fullscreenCamera);
+            if (closeupGpu.bloom) {
+              renderer.compile(closeupGpu.bloom.scene, closeupGpu.fullscreenCamera);
+              closeupGpu.bloom.quad.material = closeupGpu.bloom.upMaterial;
+              renderer.compile(closeupGpu.bloom.scene, closeupGpu.fullscreenCamera);
+              closeupGpu.bloom.quad.material = closeupGpu.bloom.downMaterial;
+            }
           } finally {
             renderer.debug.onShaderError = previousShaderErrorHandler;
           }
           if (shaderError) throw shaderError;
+          updateShadowUniforms();
           updateCompanionUniforms();
+          closeupGpu.compositeUniforms.uExposure.value = 2 ** Number(exposureSlider.value);
+          if (diskEnabled) ensureDiskAssets();
+          applyLensingMaterial();
           statusElement.textContent = message('bhLutReady', 'Null-geodesic LUT ready · ESA/Gaia/DPAC reference sky');
         } catch (error) {
           activateFallback(error.message);
@@ -960,6 +1302,13 @@ export function createBlackHoleView(ctx) {
     fallbackReason = reason || '';
     fallbackCanvas.hidden = mode !== 'closeup';
     statusElement.textContent = `${message('bhWebglFallback', 'Static CPU fallback from the same geodesic LUT')} · ${fallbackReason}`;
+    // The static fallback never renders the illustrative disk; disabling the
+    // toggle states that plainly instead of silently ignoring it.
+    diskToggle.checked = false;
+    diskToggle.disabled = true;
+    diskToggle.title = message('bhDiskUnavailableFallback',
+      'The illustrative disk needs the WebGL2 renderer; the static fallback never shows it.');
+    diskCaveat.hidden = true;
     fallbackDirty = true;
   }
 
@@ -970,15 +1319,19 @@ export function createBlackHoleView(ctx) {
     return adaptiveScale;
   }
 
+  // Continuous adaptive resolution: one 1/16 notch per 45-frame window with a
+  // wide fps dead band, so scale changes are frequent, small and invisible
+  // instead of rare 25% pops.
   function adaptQuality(dt) {
     if (qualityMode !== 'auto') return;
     qualityFrameCount++;
     qualityTime += Math.min(0.1, Math.max(0, dt || 0));
-    if (qualityFrameCount < 90) return;
+    if (qualityFrameCount < 45) return;
     const fps = qualityFrameCount / Math.max(0.001, qualityTime);
     const previous = adaptiveScale;
-    if (fps < 42) adaptiveScale = adaptiveScale === 1 ? 0.75 : 0.5;
-    else if (fps > 57) adaptiveScale = adaptiveScale === 0.5 ? 0.75 : 1;
+    const notch = 1 / 16;
+    if (fps < 45) adaptiveScale = Math.max(0.5, adaptiveScale - notch);
+    else if (fps > 58) adaptiveScale = Math.min(1, adaptiveScale + notch);
     qualityFrameCount = 0;
     qualityTime = 0;
     if (adaptiveScale !== previous) targetWidth = targetHeight = 0;
@@ -992,22 +1345,93 @@ export function createBlackHoleView(ctx) {
     if (!closeupTarget) {
       closeupTarget = new THREE.WebGLRenderTarget(width, height, {
         minFilter: THREE.LinearFilter,
-        magFilter: THREE.LinearFilter,
+        magFilter: upscaleCrisp ? THREE.NearestFilter : THREE.LinearFilter,
         format: THREE.RGBAFormat,
-        type: THREE.UnsignedByteType,
+        // Open-range linear HDR when renderable; the composite pass performs
+        // exposure/tone mapping. The 8-bit path stores dithered sRGB.
+        type: closeupHdr ? THREE.HalfFloatType : THREE.UnsignedByteType,
         depthBuffer: false,
         stencilBuffer: false,
       });
-      closeupTarget.texture.colorSpace = THREE.LinearSRGBColorSpace;
+      closeupTarget.texture.colorSpace = THREE.NoColorSpace;
       closeupTarget.texture.generateMipmaps = false;
-      closeupGpu.blitMaterial.map = closeupTarget.texture;
+      closeupGpu.compositeUniforms.uScene.value = closeupTarget.texture;
+      closeupGpu.compositeUniforms.uBloom.value = closeupTarget.texture;
       targetWidth = width;
       targetHeight = height;
+      ensureBloomPyramid();
     } else if (width !== targetWidth || height !== targetHeight) {
       closeupTarget.setSize(width, height);
       targetWidth = width;
       targetHeight = height;
+      ensureBloomPyramid();
     }
+    // Tangent-plane step of one render pixel, used by the analytic Jacobian.
+    closeupGpu.uniforms.uPixelStep.value = 2 * closeupGpu.uniforms.uTanHalfFov.value / height;
+  }
+
+  // Three half-resolution octaves for the PSF: downs hold the pyramid,
+  // ups collect the widened result back to half resolution.
+  function ensureBloomPyramid() {
+    const bloom = closeupGpu?.bloom;
+    if (!bloom) return;
+    const makeTarget = (w, h) => {
+      const target = new THREE.WebGLRenderTarget(w, h, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.HalfFloatType,
+        depthBuffer: false,
+        stencilBuffer: false,
+      });
+      target.texture.colorSpace = THREE.NoColorSpace;
+      target.texture.generateMipmaps = false;
+      return target;
+    };
+    const sizes = [1, 2, 3].map(level => [
+      Math.max(1, Math.floor(targetWidth / 2 ** level)),
+      Math.max(1, Math.floor(targetHeight / 2 ** level)),
+    ]);
+    if (!bloom.downs.length) {
+      bloom.downs = sizes.map(([w, h]) => makeTarget(w, h));
+      bloom.ups = [makeTarget(...sizes[1]), makeTarget(...sizes[0])];
+      closeupGpu.compositeUniforms.uBloom.value = bloom.ups[1].texture;
+      closeupGpu.compositeUniforms.uPsfWeight.value = 0.08;
+    } else {
+      bloom.downs.forEach((target, index) => target.setSize(...sizes[index]));
+      bloom.ups[0].setSize(...sizes[1]);
+      bloom.ups[1].setSize(...sizes[0]);
+    }
+  }
+
+  function renderBloomPyramid() {
+    const bloom = closeupGpu?.bloom;
+    if (!bloom) return;
+    const down = bloom.downMaterial.uniforms;
+    const up = bloom.upMaterial.uniforms;
+    const pass = (material, target) => {
+      bloom.quad.material = material;
+      renderer.setRenderTarget(target);
+      renderer.render(bloom.scene, closeupGpu.fullscreenCamera);
+    };
+    bloom.quad.material = bloom.downMaterial;
+    down.uSource.value = closeupTarget.texture;
+    down.uHalfTexel.value.set(0.5 / targetWidth, 0.5 / targetHeight);
+    pass(bloom.downMaterial, bloom.downs[0]);
+    down.uSource.value = bloom.downs[0].texture;
+    down.uHalfTexel.value.set(0.5 / bloom.downs[0].width, 0.5 / bloom.downs[0].height);
+    pass(bloom.downMaterial, bloom.downs[1]);
+    down.uSource.value = bloom.downs[1].texture;
+    down.uHalfTexel.value.set(0.5 / bloom.downs[1].width, 0.5 / bloom.downs[1].height);
+    pass(bloom.downMaterial, bloom.downs[2]);
+    up.uSource.value = bloom.downs[2].texture;
+    up.uAdd.value = bloom.downs[1].texture;
+    up.uHalfTexel.value.set(0.5 / bloom.downs[2].width, 0.5 / bloom.downs[2].height);
+    pass(bloom.upMaterial, bloom.ups[0]);
+    up.uSource.value = bloom.ups[0].texture;
+    up.uAdd.value = bloom.downs[0].texture;
+    up.uHalfTexel.value.set(0.5 / bloom.ups[0].width, 0.5 / bloom.ups[0].height);
+    pass(bloom.upMaterial, bloom.ups[1]);
   }
 
   function updateRayUniforms() {
@@ -1040,8 +1464,9 @@ export function createBlackHoleView(ctx) {
       renderer.setRenderTarget(closeupTarget);
       renderer.clear(true, false, false);
       renderer.render(closeupGpu.fullscreenScene, closeupGpu.fullscreenCamera);
+      renderBloomPyramid();
       renderer.setRenderTarget(null);
-      renderer.render(closeupGpu.blitScene, closeupGpu.fullscreenCamera);
+      renderer.render(closeupGpu.compositeScene, closeupGpu.fullscreenCamera);
     } catch (error) {
       renderer.setRenderTarget(null);
       activateFallback(error.message);
@@ -1210,8 +1635,10 @@ export function createBlackHoleView(ctx) {
     rig.visible = active && overview;
     reticleElement.hidden = !active || !overview;
     overviewLabels.forEach(label => { label.hidden = !active || !overview; });
+    if (!active || !overview) shadowLabel.hidden = true;
     scaleContainer.hidden = !active || !overview;
     fallbackCanvas.hidden = !active || overview || !fallbackActive;
+    syncBackdropVisibility();
   }
 
   function setMode(nextMode) {
@@ -1262,6 +1689,9 @@ export function createBlackHoleView(ctx) {
     saveView();
     if (onEnter) onEnter('black-hole');
     active = true;
+    // Start the shared sky download immediately so the overview backdrop can
+    // fade in during the travel sequence, before the close-up tab is opened.
+    ensureSkyTexture();
     document.body.classList.add('black-hole-mode');
     currentSimDays = Number.isFinite(ctx.getSimDays?.()) ? ctx.getSimDays() : currentSimDays;
     updateOrbit(currentSimDays);
@@ -1274,9 +1704,13 @@ export function createBlackHoleView(ctx) {
     if (!active) return;
     active = false;
     rig.visible = false;
+    backdrop.visible = false;
+    backdropOpacity = 1;
+    backdropMaterial.uniforms.uOpacity.value = 1;
     fallbackCanvas.hidden = true;
     reticleElement.hidden = true;
     overviewLabels.forEach(label => { label.hidden = true; });
+    shadowLabel.hidden = true;
     scaleContainer.hidden = true;
     document.body.classList.remove('black-hole-mode');
     restoreView();
@@ -1306,6 +1740,7 @@ export function createBlackHoleView(ctx) {
     controls.update();
     if (mode === 'overview') {
       fallbackCanvas.hidden = true;
+      backdrop.position.copy(camera.position);
       renderer.setRenderTarget(null);
       renderer.render(scene, camera);
       updateReticle();
@@ -1354,6 +1789,21 @@ export function createBlackHoleView(ctx) {
     qualityTime = 0;
     targetWidth = targetHeight = 0;
   });
+  exposureSlider.addEventListener('input', () => {
+    if (closeupGpu) {
+      closeupGpu.compositeUniforms.uExposure.value = 2 ** Number(exposureSlider.value);
+    }
+  });
+  diskToggle.addEventListener('change', () => setDiskEnabled(diskToggle.checked));
+  crispToggle.addEventListener('change', () => {
+    upscaleCrisp = crispToggle.checked;
+    // The sampling filter is baked into the render target: recreate it.
+    if (closeupTarget) {
+      closeupTarget.dispose();
+      closeupTarget = null;
+      targetWidth = targetHeight = 0;
+    }
+  });
   controls.addEventListener('start', onControlsStart);
   window.addEventListener('keydown', onKeyDown);
 
@@ -1365,6 +1815,14 @@ export function createBlackHoleView(ctx) {
     window.removeEventListener('keydown', onKeyDown);
     ui.remove();
     scene.remove(rig);
+    scene.remove(backdrop);
+    backdrop.geometry.dispose();
+    backdropMaterial.dispose();
+    companionGlowInner.material.dispose();
+    companionGlowOuter.material.dispose();
+    companionGlowTexture.dispose();
+    shadowRing.geometry.dispose();
+    shadowRingMaterial.dispose();
     companionMesh.geometry.dispose();
     companionMesh.material.dispose();
     horizonMesh.geometry.dispose();
@@ -1382,10 +1840,24 @@ export function createBlackHoleView(ctx) {
       closeupGpu.lutTexture.dispose();
       closeupGpu.material.dispose();
       closeupGpu.quadGeometry.dispose();
-      closeupGpu.blitMaterial.dispose();
-      closeupGpu.blitGeometry.dispose();
+      closeupGpu.compositeMaterial.dispose();
+      closeupGpu.compositeGeometry.dispose();
+      if (closeupGpu.bloom) {
+        closeupGpu.bloom.downs.forEach(target => target.dispose());
+        closeupGpu.bloom.ups.forEach(target => target.dispose());
+        closeupGpu.bloom.downMaterial.dispose();
+        closeupGpu.bloom.upMaterial.dispose();
+        closeupGpu.bloom.geometry.dispose();
+      }
     }
-    if (assetState?.skyTexture) assetState.skyTexture.dispose();
+    if (diskState) {
+      diskState.trajectoryTexture.dispose();
+      diskState.familyTexture.dispose();
+      diskState.observerTexture.dispose();
+      diskState.blackbodyTexture.dispose();
+      diskState.material.dispose();
+    }
+    if (sharedSkyTexture) sharedSkyTexture.dispose();
   }
 
   updateOrbit(currentSimDays);
@@ -1398,6 +1870,7 @@ export function createBlackHoleView(ctx) {
     resize,
     resetView,
     setMode,
+    setBackdropFade,
     setRenderAnchor,
     getRenderAnchor,
     getLogicalPosition: () => logicalPosition,

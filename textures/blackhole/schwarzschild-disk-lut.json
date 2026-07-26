@@ -1,0 +1,41 @@
+{
+  "format": "RG32F little-endian, tightly packed, row-major",
+  "files": {
+    "trajectory": "schwarzschild-disk-trajectory-512x512-rg32f.bin",
+    "family": "schwarzschild-disk-families-512x1-rg32f.bin",
+    "observer": "schwarzschild-disk-observer-512x512-rg32f.bin"
+  },
+  "grid": {
+    "trajectoryWidth": 512,
+    "trajectoryHeight": 512,
+    "familyWidth": 512,
+    "observerWidth": 512,
+    "observerHeight": 512,
+    "channels": 2,
+    "bytesPerChannel": 4,
+    "criticalImpactParameterOverM": 5.196152422706632,
+    "capturedEpsilonMin": 0.000001,
+    "escapingDeltaMin": 0.000001,
+    "impactParameterMaxOverM": 110,
+    "capturedEndInverseRadius": 0.52,
+    "observerRadiusMin": 6,
+    "observerRadiusMax": 100,
+    "observerAlphaEpsilonMin": 0.000001,
+    "maxCrossings": 10,
+    "diskInnerRadiusOverM": 6
+  },
+  "metric": "Schwarzschild; geometric units G=c=M=1",
+  "integrator": "endpoint-regularized / sinh-transformed 192-point Gauss-Legendre; 8192-interval cumulative Simpson for captured rows",
+  "generator": "tools/generate_blackhole_disk_lut.mjs",
+  "generationSeconds": 5.796,
+  "validation": {
+    "nonFiniteScalars": 0,
+    "trajectoryMonotoneViolations": 0,
+    "trajectoryNegativeSlopes": 0,
+    "maxEscapingInverseRadiusAbsError": 0.000010038276249541012,
+    "maxCapturedInverseRadiusAbsError": 0.00014607059048088455,
+    "maxObserverPhiEndAbsErrorVsReference": 7.846860938798272e-9,
+    "maxObserverPhiEndAbsErrorVsDirectTracerBroadField": 3.2800816285316614e-8,
+    "referenceIntegrator": "factorized/sinh-transformed 384-point Gauss-Legendre"
+  }
+}

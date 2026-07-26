@@ -2,8 +2,10 @@
 
 ## Eric Bruneton — black_hole_shader
 
-The Gaia BH1 visualization implements a Schwarzschild beam-tracing approach
-informed by Eric Bruneton's [paper](https://ebruneton.github.io/black_hole_shader/paper.pdf)
+The Gaia BH1 visualization implements a Schwarzschild beam-tracing approach —
+including the precomputed master-trajectory tables behind the opt-in
+illustrative accretion disk — informed by Eric Bruneton's
+[paper](https://ebruneton.github.io/black_hole_shader/paper.pdf)
 and [reference implementation](https://github.com/ebruneton/black_hole_shader).
 The upstream project is distributed under the BSD 3-Clause License, reproduced
 below for attribution and license compatibility. This notice does not assert

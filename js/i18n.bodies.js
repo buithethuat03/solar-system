@@ -6,7 +6,7 @@
 export const BODIES_VI = {
   "gaia-bh1": {
     "type": "Hệ đôi chứa hố đen đang ngủ",
-    "description": "Gaia BH1 là một hệ sao đôi cách Hệ Mặt Trời khoảng 478 parsec (xấp xỉ 1.560 năm ánh sáng), chứa ít nhất một hố đen khối lượng sao và một ngôi sao giống Mặt Trời. Hố đen được nhận ra từ chuyển động quỹ đạo của sao đồng hành, chứ không phải từ ánh sáng của chính nó; chưa phát hiện phát xạ do bồi tụ trong hệ này.",
+    "description": "Gaia BH1 là một hệ sao đôi cách Hệ Mặt Trời khoảng 478 parsec (xấp xỉ 1.560 năm ánh sáng), chứa ít nhất một hố đen khối lượng sao và một ngôi sao giống Mặt Trời. Hố đen được nhận ra từ chuyển động quỹ đạo của sao đồng hành, chứ không phải từ ánh sáng của chính nó; chưa phát hiện phát xạ do bồi tụ trong hệ này, nên mặc định cảnh không vẽ đĩa bồi tụ — chỉ có chế độ minh họa tự chọn, gắn nhãn rõ ràng.",
     "facts": [
       "Gaia BH1 là hệ chứa hố đen đã biết gần Hệ Mặt Trời nhất khi được công bố và xác nhận bằng quỹ đạo thiên văn cùng vận tốc xuyên tâm.",
       "Locator trên màn hình giữ đúng hướng ICRS; neo 3D logic nằm ở khoảng cách danh định suy ra từ thị sai, trên cùng thước AU thật nhờ floating origin.",

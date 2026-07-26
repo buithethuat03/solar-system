@@ -423,6 +423,14 @@ body.black-hole-mode .eclipse-ui { display: none !important; }
 .bh-travel-track { height: 4px; margin: 12px 0 9px; overflow: hidden; background: rgba(255,255,255,.08); border-radius: 999px; }
 .bh-travel-track i { display: block; width: 0; height: 100%; background: linear-gradient(90deg,#4fb4e6,#b6efff); box-shadow: 0 0 10px rgba(111,211,255,.55); }
 .bh-travel small { display: block; color: #91a4c1; font-size: .64rem; line-height: 1.45; }
+/* During the final crossfade the card steps aside so the destination is
+   unobstructed, and the remaining-distance readout takes the lead. */
+.bh-travel.arriving {
+  top: auto; bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); border-color: rgba(111,211,255,.6);
+}
+.bh-travel.arriving .bh-travel-row output { font-size: .78rem; color: #f0fbff; }
+.bh-travel.arriving .bh-travel-track i { box-shadow: 0 0 16px rgba(140,224,255,.85); }
 body.black-hole-traveling .bh-panel { visibility: hidden; }
 body.black-hole-traveling .bh-scene-label,
 body.black-hole-traveling .bh-reticle { display: none !important; }
@@ -499,6 +507,10 @@ body.black-hole-traveling .bh-reticle { display: none !important; }
 }
 .bh-key-orbits::before { top: 4px; color: #e7d7a8; }
 .bh-key-orbits::after { bottom: 4px; color: #72acd4; }
+.bh-key-sky {
+  border-radius: 3px; border: 1px solid rgba(139,181,235,.35);
+  background: linear-gradient(135deg, #0a1226 0%, #23304e 45%, #63513c 70%, #101a30 100%);
+}
 .bh-screen-scale {
   display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 5px 9px;
   padding: 7px 10px; color: #dcecff; background: rgba(4,8,15,.38); border: 1px solid rgba(139,181,235,.13);
@@ -525,6 +537,10 @@ body.black-hole-traveling .bh-reticle { display: none !important; }
 }
 .bh-controls { display: flex; flex-direction: column; gap: 9px; }
 .bh-controls label { display: flex; flex-direction: column; gap: 4px; color: #9fb0cc; font-size: .68rem; }
+.bh-controls label.bh-check { flex-direction: row; align-items: center; gap: 7px; cursor: pointer; }
+.bh-controls label.bh-check input { margin: 0; accent-color: #4fb4e6; }
+.bh-controls label.bh-disk-row span { color: #ffd9a8; }
+.bh-controls .bh-disk-hint { margin: -4px 0 2px 21px; color: #8a9cba; font-size: .62rem; line-height: 1.4; }
 .bh-controls button, .bh-controls select {
   min-height: 32px; padding: 6px 8px; color: var(--text); background: rgba(255,255,255,.05);
   border: 1px solid rgba(139,181,235,.2); border-radius: 8px; font: inherit; font-size: .74rem;
@@ -580,6 +596,15 @@ body.black-hole-traveling .bh-reticle { display: none !important; }
 }
 .bh-reticle::before { width: 48px; height: 1px; }
 .bh-reticle::after { width: 1px; height: 48px; }
+.bh-reticle { transition: opacity .25s ease; }
+.bh-reticle > i {
+  position: absolute; inset: -7px; border: 1px dashed rgba(158,215,255,.5);
+  border-radius: 50%; animation: bh-reticle-spin 14s linear infinite;
+}
+@keyframes bh-reticle-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .bh-reticle > i { animation: none; }
+}
 
 .bh-scene-label {
   position: absolute; z-index: 2; max-width: min(220px, 42vw); padding: 4px 7px 4px 18px;
@@ -602,6 +627,8 @@ button.bh-label-black-hole:hover, button.bh-label-black-hole:focus-visible {
 .bh-label-companion::before { background: #f1deb0; box-shadow: 0 0 6px rgba(241,222,176,.65); }
 .bh-label-barycentre { color: #bdcbe0; transform: translate(-50%,17px); }
 .bh-label-barycentre::before { width: 5px; height: 5px; border-radius: 0; transform: translateY(-50%) rotate(45deg); }
+.bh-label-shadow { color: #cfeaff; border-color: rgba(111,211,255,.4); transform: translate(17px,24px); transition: opacity .25s ease; }
+.bh-label-shadow::before { background: transparent; border: 1px solid #8edcff; }
 
 @media (max-width: 860px) {
   .bh-panel {

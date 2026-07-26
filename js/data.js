@@ -211,6 +211,25 @@ export const BLACK_HOLES = [
         provenance: 'model-assumption',
         viewpoint: 'Solar System',
       },
+      illustrativeAccretionDisk: {
+        provenance: 'model-assumption',
+        optIn: true,
+        defaultEnabled: false,
+        plane: 'binary orbital plane (measured inclination and ascending node)',
+        innerRadiusOverM: 6,
+        outerRadiusOverM: 30,
+        peakTemperatureK: 8000,
+        temperatureProfile: 'thin disk, T ∝ r^(-3/4) · (1 - sqrt(6/r))^(1/4)',
+        relativisticEffects: [
+          'gravitational redshift',
+          'Keplerian Doppler shift and bolometric beaming (T_obs = g·T)',
+          'lensed multiple images from the same geodesic tables',
+        ],
+        reason:
+          'No accretion emission is detected at Gaia BH1 (accretionEvidence: none_detected). ' +
+          'This physically motivated disk renders only in the labeled, opt-in illustrative mode ' +
+          'and never by default.',
+      },
     },
 
     description:
