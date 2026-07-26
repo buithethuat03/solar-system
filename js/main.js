@@ -559,10 +559,8 @@ if (!linkState.debug) {
   const fpsEl = document.getElementById('hud-fps');
   if (fpsEl) fpsEl.style.display = 'none';
 }
-applyStaticTranslations();   // translate the static HTML chrome (no-op in English)
+applyStaticTranslations();   // render all data-i18n chrome strings for LANG
 ui.showInfo(SUN, 'sun');   // start by describing the Sun
-const creditsEl = document.getElementById('credits');
-if (creditsEl) creditsEl.textContent = t('credits');
 
 // ---------------------------------------------------------------------------
 //  Eclipse modes (solar / lunar)
@@ -784,14 +782,56 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 
 // ---------------------------------------------------------------------------
+//  Mobile overflow (⋯) menu — reparents the topbar actions on narrow screens
+// ---------------------------------------------------------------------------
+// appendChild moves the live elements, so every existing listener survives.
+{
+  const moreBtn = document.getElementById('btn-more');
+  const moreMenu = document.getElementById('more-menu');
+  const hud = document.getElementById('hud');
+  const collapsible = ['btn-eclipse', 'btn-view', 'btn-share', 'btn-shot', 'btn-help', 'btn-reset-view']
+    .map((id) => document.getElementById(id)).filter(Boolean);
+  const closeMore = () => {
+    moreMenu.classList.add('hidden');
+    moreBtn.classList.remove('active');
+    moreBtn.setAttribute('aria-expanded', 'false');
+  };
+  const narrow = matchMedia('(max-width: 700px)');
+  const applyMore = () => {
+    if (narrow.matches) {
+      collapsible.forEach((b) => moreMenu.appendChild(b));
+      moreBtn.hidden = false;
+    } else {
+      collapsible.forEach((b) => hud.insertBefore(b, moreBtn));
+      moreBtn.hidden = true;
+      closeMore();
+    }
+  };
+  narrow.addEventListener('change', applyMore);
+  applyMore();
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = moreMenu.classList.toggle('hidden') === false;
+    moreBtn.classList.toggle('active', open);
+    moreBtn.setAttribute('aria-expanded', String(open));
+  });
+  // Any action chosen from the menu closes it; so does tapping elsewhere.
+  moreMenu.addEventListener('click', (e) => { if (e.target.closest('button')) closeMore(); });
+  document.addEventListener('pointerdown', (e) => {
+    if (!moreMenu.classList.contains('hidden') && !moreMenu.contains(e.target) && e.target !== moreBtn) {
+      closeMore();
+    }
+  }, true);
+}
+
+// ---------------------------------------------------------------------------
 //  Share link & screenshot
 // ---------------------------------------------------------------------------
 // Both live in the topbar, which every special mode (eclipse / black hole /
 // fullscreen) hides — so they only ever act on the plain orrery view.
 const shareBtn = document.getElementById('btn-share');
 if (shareBtn) {
-  shareBtn.title = t('shareTitle');
-  shareBtn.setAttribute('aria-label', t('share'));
+  const shareIco = shareBtn.querySelector('.btn-ico') ?? shareBtn;
   let shareTimer = null;
   shareBtn.addEventListener('click', async () => {
     const hash = '#' + serializeState(state, state.selected?.ref?.id ?? null);
@@ -799,16 +839,14 @@ if (shareBtn) {
     const url = location.origin + location.pathname + hash;
     let copied = true;
     try { await navigator.clipboard.writeText(url); } catch { copied = false; }
-    shareBtn.textContent = copied ? t('shareCopied') : t('shareFailed');
+    shareIco.textContent = copied ? t('shareCopied') : t('shareFailed');
     clearTimeout(shareTimer);
-    shareTimer = setTimeout(() => { shareBtn.textContent = '🔗'; }, 1800);
+    shareTimer = setTimeout(() => { shareIco.textContent = '🔗'; }, 1800);
   });
 }
 
 const shotBtn = document.getElementById('btn-shot');
 if (shotBtn) {
-  shotBtn.title = t('screenshotTitle');
-  shotBtn.setAttribute('aria-label', t('screenshot'));
   shotBtn.addEventListener('click', () => {
     if (blackHole.isActive()) return;
     // Render on demand right before the copy, so the WebGL back buffer is
@@ -927,7 +965,7 @@ window.addEventListener('keydown', (e) => {
       document.getElementById('btn-help')?.focus();
       return;
     }
-    for (const id of ['toggles', 'eclipse-menu']) {
+    for (const id of ['toggles', 'eclipse-menu', 'more-menu']) {
       const panel = document.getElementById(id);
       if (panel && !panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
     }

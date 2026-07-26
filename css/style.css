@@ -262,6 +262,8 @@ aside, footer, header {
 }
 .preset:hover { background: rgba(111,211,255,.16); color: var(--text); border-color: var(--accent); }
 .time-right { display: flex; align-items: center; }
+.date-ico { display: none; }
+.sheet-handle { display: none; }
 .date-pick { font-size: .68rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
 .date-pick input {
   background: rgba(0,0,0,.35); color: var(--text); border: 1px solid var(--border);
@@ -276,7 +278,8 @@ body.fullscreen-mode #nav-panel,
 body.fullscreen-mode #info-panel,
 body.fullscreen-mode #time-bar,
 body.fullscreen-mode #toggles,
-body.fullscreen-mode #eclipse-menu { display: none !important; }
+body.fullscreen-mode #eclipse-menu,
+body.fullscreen-mode #more-menu { display: none !important; }
 
 /* ---- Help panel --------------------------------------------------------- */
 #help-panel {
@@ -298,21 +301,85 @@ body.fullscreen-mode #eclipse-menu { display: none !important; }
 #credits { margin-top: 16px; font-size: .72rem; opacity: .65; border-top: 1px solid var(--border); padding-top: 12px; }
 
 /* ---- Responsive --------------------------------------------------------- */
+/* Notched devices: keep fixed chrome inside the safe area. */
+#topbar {
+  top: max(14px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+}
+#time-bar { bottom: max(14px, env(safe-area-inset-bottom)); }
+
 @media (max-width: 860px) {
   #nav-panel { width: 168px; }
   #toggles { width: 200px; }
   #info-panel { width: 280px; }
   .brand-sub { display: none; }
   #time-bar { gap: 10px; padding: 10px 12px; }
-  .time-right { display: none; }
+  /* Compact date picker: a 📅 button whose invisible native input keeps the
+     real focus/tap target, so the platform date sheet still opens. */
+  .date-pick { position: relative; width: 42px; height: 38px; }
+  .date-label { display: none; }
+  .date-ico {
+    display: grid; place-items: center; width: 100%; height: 100%;
+    border: 1px solid var(--border); border-radius: 9px; font-size: 1rem;
+    background: rgba(255,255,255,.05);
+  }
+  .date-pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; }
+}
+@media (max-width: 700px) {
+  #hud { gap: 8px; }
+  #eclipse-menu { right: 10px; }
+  #toggles { right: 10px; }
 }
 @media (max-width: 560px) {
   #topbar { height: 50px; padding: 0 10px; }
   #nav-panel { max-height: 38vh; }
-  #info-panel { width: calc(100vw - 28px); }
-  #speed-presets { display: none; }
   .brand-title { font-size: .8rem; }
+  /* Speed presets scroll sideways instead of disappearing. */
+  #speed-presets { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #speed-presets::-webkit-scrollbar { display: none; }
+  .preset { flex: 0 0 auto; }
+  /* Info panel becomes a bottom sheet with a drag handle. */
+  #info-panel {
+    top: auto; bottom: 0; left: 0; right: 0; width: 100%;
+    max-height: 58vh; border-radius: 16px 16px 0 0; z-index: 22;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  #info-panel.hidden { transform: translateY(112%); }
+  .sheet-handle {
+    display: block; width: 44px; height: 4px; margin: 0 auto 10px;
+    border-radius: 3px; background: rgba(255,255,255,.28); cursor: grab;
+    touch-action: none;
+  }
 }
+/* Phones held sideways: shrink the vertical chrome so the scene survives. */
+@media (max-height: 500px) {
+  #topbar { height: 44px; }
+  #nav-panel { top: 64px; max-height: calc(100vh - 150px); }
+  #info-panel { top: 64px; max-height: calc(100vh - 160px); }
+  #toggles { top: 64px; max-height: calc(100vh - 90px); overflow-y: auto; }
+  #time-bar { padding: 6px 12px; gap: 10px; }
+  #speed-presets { display: none; }
+  .round-btn { width: 34px; height: 34px; }
+}
+
+/* ---- Overflow (⋯) menu -------------------------------------------------- */
+#more-menu {
+  position: fixed; top: max(74px, calc(env(safe-area-inset-top) + 60px)); right: 10px;
+  z-index: 45; width: 190px;
+  background: var(--panel-solid); border: 1px solid var(--border); border-radius: 12px;
+  padding: 8px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px;
+  transform-origin: top right;
+  transition: opacity .15s ease, transform .15s ease, visibility 0s linear 0s;
+}
+#more-menu.hidden {
+  opacity: 0; transform: scale(.95); pointer-events: none; visibility: hidden;
+  transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
+}
+#more-menu .ghost-btn { width: 100%; text-align: left; }
+/* Icon-only topbar buttons reveal their text label inside the ⋯ menu. */
+.btn-more-label { display: none; }
+#more-menu .btn-more-label { display: inline; margin-left: 6px; }
 
 /* ===========================================================================
    Eclipse modes
@@ -344,7 +411,8 @@ body.eclipse-mode #nav-panel,
 body.eclipse-mode #info-panel,
 body.eclipse-mode #time-bar,
 body.eclipse-mode #toggles,
-body.eclipse-mode #eclipse-menu { display: none !important; }
+body.eclipse-mode #eclipse-menu,
+body.eclipse-mode #more-menu { display: none !important; }
 
 .ecl-top {
   position: fixed; top: 14px; left: 14px; right: 14px; height: 54px; z-index: 20;
@@ -414,6 +482,7 @@ body.black-hole-mode #nav-panel,
 body.black-hole-mode #info-panel,
 body.black-hole-mode #toggles,
 body.black-hole-mode #eclipse-menu,
+body.black-hole-mode #more-menu,
 body.black-hole-mode #help-panel,
 body.black-hole-mode #labels,
 body.black-hole-mode .eclipse-ui { display: none !important; }

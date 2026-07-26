@@ -8,12 +8,11 @@ export const BODIES_VI = {
     "type": "Hệ đôi chứa hố đen đang ngủ",
     "description": "Gaia BH1 là một hệ sao đôi cách Hệ Mặt Trời khoảng 478 parsec (xấp xỉ 1.560 năm ánh sáng), chứa ít nhất một hố đen khối lượng sao và một ngôi sao giống Mặt Trời. Hố đen được nhận ra từ chuyển động quỹ đạo của sao đồng hành, chứ không phải từ ánh sáng của chính nó; chưa phát hiện phát xạ do bồi tụ trong hệ này, nên mặc định cảnh không vẽ đĩa bồi tụ — chỉ có chế độ minh họa tự chọn, gắn nhãn rõ ràng.",
     "facts": [
-      "Gaia BH1 là hệ chứa hố đen đã biết gần Hệ Mặt Trời nhất khi được công bố và xác nhận bằng quỹ đạo thiên văn cùng vận tốc xuyên tâm.",
-      "Locator trên màn hình giữ đúng hướng ICRS; neo 3D logic nằm ở khoảng cách danh định suy ra từ thị sai, trên cùng thước AU thật nhờ floating origin.",
-      "Tổng quan hệ đôi dùng chung một thước đo thật cho bán kính sao, khoảng cách quỹ đạo và chân trời sự kiện; dấu chữ thập giúp nhận ra vị trí hố đen khi chân trời nhỏ hơn một pixel.",
-      "Chưa đo được spin của Gaia BH1. Góc nhìn cận cảnh dùng metric Schwarzschild với a*=0 như một giả định mô hình tối thiểu.",
-      "Cận cảnh giả định thành phần tối là một vật thể đặc 9,27 M☉; nghiệm hai vật thể được ưu tiên nhưng chưa loại trừ hoàn toàn một cặp BH+BH rất sít với P_inner ≲ 1,5 ngày.",
-      "Không có đĩa bồi tụ, jet hay vòng sáng tự phát được thêm vào; các vùng sáng chỉ đến từ bầu trời tham chiếu hoặc sao đồng hành bị thấu kính hấp dẫn."
+      "Sao đồng hành và nghiệm quỹ đạo đòi hỏi phải có ít nhất một hố đen đang ngủ.",
+      "Ngôi sao kiểu Mặt Trời hoàn thành một vòng quỹ đạo lệch tâm sau mỗi 185,387 ngày.",
+      "Chưa phát hiện đĩa bồi tụ sáng hay jet nào, nên cảnh không tự vẽ thêm chúng.",
+      "Chưa đo được spin của Gaia BH1; spin bằng 0 là một giả định trực quan hóa được nêu rõ.",
+      "Dấu chọn của nó là proxy trên màn hình; kỹ thuật floating origin giữ neo 3D logic ở đúng khoảng cách thị sai danh định."
     ],
     "info": {
       "Status": "Hệ đang ngủ chứa ít nhất một hố đen",

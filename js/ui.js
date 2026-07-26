@@ -1,7 +1,7 @@
 // ============================================================================
 //  ui.js  —  Builds the body navigator and binds all on-screen controls.
 // ============================================================================
-import { t, MONTHS, DAYS } from './i18n.js';
+import { t, LANG, MONTHS, DAYS } from './i18n.js';
 import { bindFullscreenToggle } from './fullscreen.js';
 import { deriveBlackHoleSystem } from './blackhole-physics.js';
 
@@ -239,7 +239,7 @@ export function initUI(controller) {
   // Language: persist + reload so all content rebuilds in the chosen language.
   const langSel = $('lang-sel');
   if (langSel) {
-    langSel.value = (localStorage.getItem('solar.lang') === 'vi') ? 'vi' : 'en';
+    langSel.value = LANG;
     langSel.addEventListener('change', () => {
       localStorage.setItem('solar.lang', langSel.value);
       location.reload();
@@ -247,6 +247,24 @@ export function initUI(controller) {
   }
 
   // ---- Info panel -------------------------------------------------------
+  // On phones the panel becomes a bottom sheet; dragging its handle down
+  // dismisses it (the handle is display:none on desktop, so this stays inert).
+  const sheetHandle = document.querySelector('#info-panel .sheet-handle');
+  if (sheetHandle) {
+    let dragStartY = null;
+    sheetHandle.addEventListener('pointerdown', (e) => {
+      dragStartY = e.clientY;
+      sheetHandle.setPointerCapture(e.pointerId);
+    });
+    sheetHandle.addEventListener('pointermove', (e) => {
+      if (dragStartY !== null && e.clientY - dragStartY > 60) {
+        dragStartY = null;
+        $('info-panel').classList.add('hidden');
+      }
+    });
+    sheetHandle.addEventListener('pointerup', () => { dragStartY = null; });
+  }
+
   const focusBtn = $('btn-focus');
   focusBtn.textContent = t('focusFollow');   // localise the default label
   focusBtn.addEventListener('click', () => {

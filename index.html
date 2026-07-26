@@ -29,7 +29,7 @@
     <div class="loading-box">
       <div class="loading-sun"></div>
       <h1>SOLAR SYSTEM</h1>
-      <p id="loading-text">Loading textures…</p>
+      <p id="loading-text" data-i18n="loadingTextures">Loading textures…</p>
       <div class="loading-track"><div id="loading-bar"></div></div>
     </div>
   </div>
@@ -39,28 +39,32 @@
     <div class="brand">
       <span class="brand-mark">☀</span>
       <div>
-        <div class="brand-title">SOLAR SYSTEM</div>
-        <div class="brand-sub">Interactive 3D Orrery</div>
+        <div class="brand-title" data-i18n="brandTitle">SOLAR SYSTEM</div>
+        <div class="brand-sub" data-i18n="brandSub">Interactive 3D Orrery</div>
       </div>
     </div>
     <div id="hud">
       <span id="hud-live"></span>
       <span id="hud-follow"></span>
       <span id="hud-fps"></span>
-      <button id="btn-eclipse" class="ghost-btn" title="Eclipse views">🌒 Eclipses</button>
-      <button id="btn-view" class="ghost-btn" title="View options">⚙ View</button>
-      <button id="btn-share" class="ghost-btn" title="Share">🔗</button>
-      <button id="btn-shot" class="ghost-btn" title="Screenshot">📷</button>
-      <button id="btn-help" class="ghost-btn" title="Help">? Help</button>
-      <button id="btn-reset-view" class="ghost-btn" title="Reset camera">⟲ Reset view</button>
+      <button id="btn-eclipse" class="ghost-btn" data-i18n="btnEclipses" data-i18n-title="eclipsesTitle" title="Eclipse views">🌒 Eclipses</button>
+      <button id="btn-view" class="ghost-btn" data-i18n="btnView" data-i18n-title="viewTitle" title="View options">⚙ View</button>
+      <button id="btn-share" class="ghost-btn" data-i18n-title="shareTitle" data-i18n-label="share" title="Share"><span class="btn-ico" aria-hidden="true">🔗</span><span class="btn-more-label" data-i18n="share">Share</span></button>
+      <button id="btn-shot" class="ghost-btn" data-i18n-title="screenshotTitle" data-i18n-label="screenshot" title="Screenshot"><span class="btn-ico" aria-hidden="true">📷</span><span class="btn-more-label" data-i18n="screenshot">Screenshot</span></button>
+      <button id="btn-help" class="ghost-btn" data-i18n="btnHelp" data-i18n-title="helpTitle2" title="Help">? Help</button>
+      <button id="btn-reset-view" class="ghost-btn" data-i18n="btnReset" data-i18n-title="resetTitle" title="Reset camera">⟲ Reset view</button>
+      <button id="btn-more" class="ghost-btn" hidden aria-haspopup="true" aria-expanded="false" data-i18n-label="moreActions" aria-label="More actions">⋯</button>
     </div>
   </header>
+
+  <!-- Overflow menu for the topbar actions on narrow screens -->
+  <div id="more-menu" class="hidden"></div>
 
   <!-- Left: body navigator -->
   <aside id="nav-panel" aria-label="Body navigator">
     <div class="panel-head">
-      <span>EXPLORE</span>
-      <button id="btn-nav-toggle" class="icon-btn" title="Collapse">≡</button>
+      <span data-i18n="explore">EXPLORE</span>
+      <button id="btn-nav-toggle" class="icon-btn" data-i18n-title="collapse" title="Collapse">≡</button>
     </div>
     <div id="body-list"></div>
   </aside>
@@ -69,44 +73,44 @@
   <div id="eclipse-menu" class="hidden">
     <button id="ecl-go-solar" class="ecl-choice">
       <span class="ecl-ico">🌑</span>
-      <span><b>Solar Eclipse</b><small>The Moon hides the Sun</small></span>
+      <span><b data-i18n="eclSolarTitle">Solar Eclipse</b><small data-i18n="eclSolarSub">The Moon hides the Sun</small></span>
     </button>
     <button id="ecl-go-lunar" class="ecl-choice">
       <span class="ecl-ico">🔴</span>
-      <span><b>Lunar Eclipse</b><small>Earth's shadow on the Moon</small></span>
+      <span><b data-i18n="eclLunarTitle">Lunar Eclipse</b><small data-i18n="eclLunarSub">Earth's shadow on the Moon</small></span>
     </button>
   </div>
 
   <!-- Top-right: view options (popover) -->
   <aside id="toggles" class="hidden">
-    <div class="panel-head"><span>VIEW OPTIONS</span></div>
-    <label class="switch"><input type="checkbox" id="tg-orbits" /> <span>Orbit paths</span></label>
-    <label class="switch"><input type="checkbox" id="tg-labels" /> <span>Labels</span></label>
-    <label class="switch"><input type="checkbox" id="tg-moons" /> <span>Moons</span></label>
-    <label class="switch"><input type="checkbox" id="tg-dwarfs" /> <span>Dwarf planets</span></label>
-    <label class="switch"><input type="checkbox" id="tg-spacecraft" /> <span>Spacecraft (Voyagers)</span></label>
-    <label class="switch"><input type="checkbox" id="tg-black-holes" /> <span>Black holes</span></label>
-    <label class="switch"><input type="checkbox" id="tg-belts" /> <span>Asteroid & Kuiper belts</span></label>
-    <label class="switch"><input type="checkbox" id="tg-bloom" /> <span>Sun glow (bloom)</span></label>
-    <label class="switch"><input type="checkbox" id="tg-fullscreen" /> <span>Fullscreen</span></label>
+    <div class="panel-head"><span data-i18n="viewOptions">VIEW OPTIONS</span></div>
+    <label class="switch"><input type="checkbox" id="tg-orbits" /> <span data-i18n="tgOrbits">Orbit paths</span></label>
+    <label class="switch"><input type="checkbox" id="tg-labels" /> <span data-i18n="tgLabels">Labels</span></label>
+    <label class="switch"><input type="checkbox" id="tg-moons" /> <span data-i18n="tgMoons">Moons</span></label>
+    <label class="switch"><input type="checkbox" id="tg-dwarfs" /> <span data-i18n="tgDwarfs">Dwarf planets</span></label>
+    <label class="switch"><input type="checkbox" id="tg-spacecraft" /> <span data-i18n="tgSpacecraft">Spacecraft (Voyagers)</span></label>
+    <label class="switch"><input type="checkbox" id="tg-black-holes" /> <span data-i18n="tgBlackHoles">Black holes</span></label>
+    <label class="switch"><input type="checkbox" id="tg-belts" /> <span data-i18n="tgBelts">Asteroid & Kuiper belts</span></label>
+    <label class="switch"><input type="checkbox" id="tg-bloom" /> <span data-i18n="tgBloom">Sun glow (bloom)</span></label>
+    <label class="switch"><input type="checkbox" id="tg-fullscreen" /> <span data-i18n="tgFullscreen">Fullscreen</span></label>
     <div class="select-row">
-      <span>Distance scale</span>
+      <span data-i18n="distScale">Distance scale</span>
       <select id="dist-mode">
-        <option value="visual">Compressed (visible)</option>
-        <option value="realistic">Realistic (to scale)</option>
-        <option value="accurate">Accurate · live (true positions)</option>
+        <option value="visual" data-i18n="distVisual">Compressed (visible)</option>
+        <option value="realistic" data-i18n="distRealistic">Realistic (to scale)</option>
+        <option value="accurate" data-i18n="distAccurate">Accurate · live (true positions)</option>
       </select>
       <div class="hint" id="dist-hint"></div>
     </div>
     <div class="select-row">
-      <span>Texture quality</span>
+      <span data-i18n="texQuality">Texture quality</span>
       <select id="tex-res">
-        <option value="2k">2K · standard</option>
-        <option value="8k">8K · high-res</option>
+        <option value="2k" data-i18n="tex2k">2K · standard</option>
+        <option value="8k" data-i18n="tex8k">8K · high-res</option>
       </select>
     </div>
     <div class="select-row">
-      <span>Language</span>
+      <span data-i18n="language">Language</span>
       <select id="lang-sel">
         <option value="en">English</option>
         <option value="vi">Tiếng Việt</option>
@@ -116,20 +120,21 @@
 
   <!-- Right: info panel -->
   <aside id="info-panel" class="hidden" role="region" aria-live="polite" aria-labelledby="info-name">
+    <div class="sheet-handle" aria-hidden="true"></div>
     <div class="info-head">
       <div class="info-titles">
         <h2 id="info-name">—</h2>
         <div id="info-type" class="info-type"></div>
       </div>
       <div class="info-actions">
-        <button id="btn-info-toggle" class="icon-btn" title="Collapse">▾</button>
-        <button id="btn-focus" class="accent-btn">⌖ Focus &amp; follow</button>
+        <button id="btn-info-toggle" class="icon-btn" data-i18n-title="collapse" title="Collapse">▾</button>
+        <button id="btn-focus" class="accent-btn" data-i18n="focusFollow">⌖ Focus &amp; follow</button>
       </div>
     </div>
     <p id="info-desc"></p>
     <div id="info-table"></div>
     <div id="info-facts-wrap">
-      <h3>Did you know?</h3>
+      <h3 data-i18n="didYouKnow">Did you know?</h3>
       <ul id="info-facts"></ul>
     </div>
   </aside>
@@ -138,8 +143,8 @@
   <footer id="time-bar">
     <div class="time-left">
       <button id="btn-play" class="round-btn">❚❚</button>
-      <button id="btn-reverse" class="round-btn small" title="Reverse time">◄◄</button>
-      <button id="btn-now" class="ghost-btn" title="Jump to current date">Now</button>
+      <button id="btn-reverse" class="round-btn small" data-i18n-title="reverseTitle" title="Reverse time">◄◄</button>
+      <button id="btn-now" class="ghost-btn" data-i18n="now" data-i18n-title="nowTitle" title="Jump to current date">Now</button>
     </div>
     <div class="time-mid">
       <input type="range" id="speed-slider" />
@@ -151,7 +156,8 @@
       <div id="speed-presets"></div>
     </div>
     <div class="time-right">
-      <label class="date-pick">Go to date
+      <label class="date-pick"><span class="date-label" data-i18n="goToDate">Go to date</span>
+        <span class="date-ico" aria-hidden="true">📅</span>
         <input type="date" id="date-input" />
       </label>
     </div>
@@ -160,31 +166,12 @@
   <!-- Help panel -->
   <div id="help-panel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
     <div class="help-card">
-      <button id="btn-help-close" class="icon-btn close" aria-label="Close">✕</button>
-      <h2 id="help-title">How to use</h2>
-      <ul>
-        <li><b>Rotate:</b> click-drag with the left mouse button (one finger on touch).</li>
-        <li><b>Zoom:</b> scroll wheel, or <b>pinch with two fingers</b> on touch.</li>
-        <li><b>Pan:</b> right-click drag (two-finger drag on touch).</li>
-        <li><b>Fly the viewpoint:</b> <b>W A S D</b> or the <b>arrow keys</b> move through space; <b>R / F</b> move up / down. Speed adapts to how far you are zoomed in.</li>
-        <li><b>Select a body:</b> click it, click its label, or pick it from the left list.</li>
-        <li><b>Focus &amp; follow:</b> double-click a body, choose it in the list, or press <b>Focus &amp; follow</b>.</li>
-        <li><b>Pause / resume:</b> press <b>Space</b>. <b>Esc</b> stops following.</li>
-        <li><b>Time:</b> use the slider, presets, or <b>Now</b>; reverse with ◄◄.</li>
-      </ul>
-      <h3>About the model</h3>
-      <p>
-        Planet positions are computed from real <b>NASA/JPL J2000 Keplerian
-        orbital elements</b>, so the alignment of the planets matches the chosen
-        date. Axial tilts and rotation periods are physically accurate.
-        The default <i>Compressed</i> view shrinks the distances so every planet
-        is visible together; <i>Realistic</i> and <i>Accurate · live</i> show the
-        Solar System fully <b>true to scale</b> — bodies and the gulfs between
-        them share one ruler, so the Sun becomes a dot and the planets vanish
-        into mostly-empty space (Earth orbits about 107 Sun-widths from the Sun).
-        Use Compressed for an easy overview and Realistic to grasp the real scale.
-      </p>
-      <p id="credits"></p>
+      <button id="btn-help-close" class="icon-btn close" data-i18n-label="close" aria-label="Close">✕</button>
+      <h2 id="help-title" data-i18n="helpHowTo">How to use</h2>
+      <ul data-i18n-list="help"></ul>
+      <h3 data-i18n="helpAbout">About the model</h3>
+      <p data-i18n-html="helpAboutText"></p>
+      <p id="credits" data-i18n="credits"></p>
     </div>
   </div>
 
