@@ -565,16 +565,31 @@ ui.showInfo(SUN, 'sun');   // start by describing the Sun
 // ---------------------------------------------------------------------------
 //  Eclipse modes (solar / lunar)
 // ---------------------------------------------------------------------------
-const eclipse = createEclipse({
-  scene, camera, controls,
-  getSimDays: () => state.simDays,
-  // Jumping to a real catalog event also aims the master clock at it, so the
-  // orrery shows the true Sun–Moon–Earth alignment on exit. Pause: the moment
-  // should not drift away while the user studies it.
-  setSimDays: (d) => { state.simDays = d; state.paused = true; ui.setPaused(true); },
-  onEnter: () => { stopFollow(); setOrreryVisible(false); },
-  onExit: () => { setOrreryVisible(true); },
-});
+// The eclipse rig (its own Sun/Earth/Moon meshes, shadow cones, POV canvas)
+// is only needed once the user actually opens an eclipse view, so the whole
+// module instance is created lazily on first enter(). THREE.Cache already
+// holds every texture it wants, so the deferred build is near-instant.
+let eclipseRig = null;
+function ensureEclipseRig() {
+  eclipseRig ??= createEclipse({
+    scene, camera, controls,
+    getSimDays: () => state.simDays,
+    // Jumping to a real catalog event also aims the master clock at it, so the
+    // orrery shows the true Sun–Moon–Earth alignment on exit. Pause: the moment
+    // should not drift away while the user studies it.
+    setSimDays: (d) => { state.simDays = d; state.paused = true; ui.setPaused(true); },
+    onEnter: () => { stopFollow(); setOrreryVisible(false); },
+    onExit: () => { setOrreryVisible(true); },
+  });
+  return eclipseRig;
+}
+const eclipse = {
+  isActive: () => eclipseRig?.isActive() ?? false,
+  enter: (kind) => ensureEclipseRig().enter(kind),
+  exit: () => eclipseRig?.exit(),
+  update: (dt) => eclipseRig?.update(dt),
+  togglePlay: () => eclipseRig?.togglePlay(),
+};
 
 const blackHoleData = BLACK_HOLES[0];
 const blackHoleLogical = interstellarScenePosition(blackHoleData, CONFIG.DIST_REAL_K);
@@ -1027,9 +1042,67 @@ function applyKeyboardMove(dt) {
 //  Animation loop
 // ---------------------------------------------------------------------------
 // Debug / power-user hook: inspect from the browser console (e.g. SOLAR.state).
+// ---------------------------------------------------------------------------
+//  PWA: service worker + downloadable offline pack
+// ---------------------------------------------------------------------------
+const swSupported = 'serviceWorker' in navigator &&
+  (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname));
+if (swSupported) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW registration failed:', err));
+  });
+}
+{
+  const offlineBtn = document.getElementById('btn-offline');
+  const offlineStatus = document.getElementById('offline-status');
+  if (offlineBtn && !swSupported) {
+    offlineBtn.disabled = true;
+    offlineBtn.textContent = '—';
+    if (offlineStatus) offlineStatus.textContent = t('offlineUnsupported');
+  } else if (offlineBtn) {
+    import('./offline_manifest.js').then(({ OFFLINE_ASSETS, OFFLINE_TOTAL_BYTES }) => {
+      offlineBtn.textContent =
+        t('offlineDownload').replace('{mb}', String(Math.round(OFFLINE_TOTAL_BYTES / 1048576)));
+      let running = false;
+      offlineBtn.addEventListener('click', async () => {
+        if (running) return;
+        running = true;
+        offlineBtn.disabled = true;
+        try {
+          await navigator.serviceWorker.ready;   // the SW caches whatever we fetch
+          let done = 0;
+          const queue = [...OFFLINE_ASSETS];
+          const worker = async () => {
+            for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+              const res = await fetch(path);
+              if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+              await res.blob();
+              done += 1;
+              if (offlineStatus && (done % 3 === 0 || done === OFFLINE_ASSETS.length)) {
+                offlineStatus.textContent = t('offlineProgress')
+                  .replace('{done}', String(done)).replace('{total}', String(OFFLINE_ASSETS.length));
+              }
+            }
+          };
+          await Promise.all([worker(), worker(), worker(), worker()]);
+          if (offlineStatus) offlineStatus.textContent = t('offlineDone');
+        } catch (err) {
+          console.warn('Offline pack failed:', err);
+          if (offlineStatus) offlineStatus.textContent = t('offlineFail');
+        } finally {
+          running = false;
+          offlineBtn.disabled = false;
+        }
+      });
+    });
+  }
+}
+
 window.SOLAR = {
   THREE, scene, systemRoot, camera, controls, system, state, controller,
   eclipse, blackHole,
+  // Debug hook: wipe every service-worker cache (then hard-reload).
+  clearCaches: () => caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))),
   gaiaBh1: {
     logical: blackHoleLogical,
     absoluteScenePosition: blackHoleAbsolute,

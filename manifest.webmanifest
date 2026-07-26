@@ -1,0 +1,15 @@
+{
+  "name": "3D Solar System — Interactive Orrery",
+  "short_name": "Solar System",
+  "description": "An interactive, scientifically grounded 3D model of the Solar System built with three.js.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05060c",
+  "theme_color": "#0a1124",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

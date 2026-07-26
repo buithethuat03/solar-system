@@ -735,8 +735,12 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   // Apply the per-mode visual scaling. In the compressed view the Sun and the
   // tiny dwarf planets are enlarged for visibility and moons hug their planet; in
   // the true-scale views everything is left at its real size and real distance.
+  // Voyager's 3 MB glTF is only visible in the true-scale views, so its load
+  // is deferred until the first switch away from 'visual' (reassigned below).
+  let requestVoyagerModel = () => {};
   function setScaleMode(mode) {
     const visual = (mode === 'visual');
+    if (!visual) requestVoyagerModel();
     sunMesh.scale.setScalar(visual ? SUN_VISUAL_SCALE : 1);
     // In the compressed view the old 5x corona spanned ~110 units — engulfing
     // every orbit out to Mars. Tighter sprites there; full glory at true scale.
@@ -818,7 +822,11 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     return mat;
   }
 
-  gltfLoader.load('models/Voyager.glb', (gltf) => {
+  let voyagerModelRequested = false;
+  requestVoyagerModel = () => {
+    if (voyagerModelRequested) return;
+    voyagerModelRequested = true;
+    gltfLoader.load('models/Voyager.glb', (gltf) => {
     const src = gltf.scene;
     src.updateMatrixWorld(true);
     // Centre on the model's bounding sphere and normalise so its radius = 1 unit,
@@ -849,7 +857,9 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
       vo.group.userData.focusRadius = vo.trueRadiusUnits;
       vo.modelPivot.add(m);
     }
-  }, undefined, (err) => console.warn('Voyager model failed to load:', err));
+    }, undefined, (err) => console.warn('Voyager model failed to load:', err));
+  };
+  if (distMode !== 'visual') requestVoyagerModel();
 
   // ----- Asteroid & Kuiper belts ------------------------------------------
   function buildBelt(cfg, color) {

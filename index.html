@@ -6,10 +6,10 @@
   <title>3D Solar System — Interactive Orrery</title>
   <meta name="description" content="An interactive, scientifically grounded 3D model of the Solar System built with three.js." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CradialGradient id='g' cx='40%25' cy='38%25' r='65%25'%3E%3Cstop offset='0' stop-color='%23fff6d6'/%3E%3Cstop offset='0.5' stop-color='%23ffb43c'/%3E%3Cstop offset='1' stop-color='%23ff6a00'/%3E%3C/radialGradient%3E%3Ccircle cx='16' cy='16' r='11' fill='url(%23g)'/%3E%3C/svg%3E" />
+  <meta name="theme-color" content="#0a1124" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="css/fonts.css" />
   <link rel="stylesheet" href="css/style.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
   <script type="importmap">
   {
@@ -108,6 +108,11 @@
         <option value="2k" data-i18n="tex2k">2K · standard</option>
         <option value="8k" data-i18n="tex8k">8K · high-res</option>
       </select>
+    </div>
+    <div class="select-row">
+      <span data-i18n="offlinePack">Offline pack</span>
+      <button id="btn-offline" class="ghost-btn">…</button>
+      <div class="hint" id="offline-status"></div>
     </div>
     <div class="select-row">
       <span data-i18n="language">Language</span>

@@ -29,8 +29,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().guess_type(path)
 
     def end_headers(self):
-        # Avoid stale caching while developing.
-        self.send_header("Cache-Control", "no-store")
+        # Path-aware caching: the heavy immutable assets (textures, models,
+        # fonts, vendored three.js) may be reused across reloads, while the
+        # app code and HTML stay uncached so edits show up on refresh.
+        p = self.path.split("?", 1)[0].lower()
+        if p.startswith(("/textures/", "/models/", "/fonts/", "/lib/")) or p.endswith(".woff2"):
+            self.send_header("Cache-Control", "public, max-age=86400")
+        else:
+            self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
     def log_message(self, fmt, *args):
