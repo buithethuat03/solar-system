@@ -176,55 +176,8 @@ function buildStarfield(scene, count, rInner, rOuter, dpr) {
   return pts;
 }
 
-// Procedural Pluto-like map (Pluto ships without a real photo texture). Renders
-// its recognisable features: the dark-red equatorial belt (Cthulhu Macula), the
-// bright nitrogen-ice "heart" (Tombaugh Regio) and pale frost poles. Artistic.
-function proceduralPlanet(seedColor = [200, 180, 150]) {
-  const w = 1024, h = 512;
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const g = c.getContext('2d');
-  let s = 1234.5;
-  const rnd = () => { s = Math.sin(s * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
-  // Soft elliptical blob with a radial falloff (centre opaque → edge transparent).
-  const blob = (x, y, rx, ry, rot, r, gg, b, a) => {
-    g.save(); g.translate(x, y); g.rotate(rot); g.scale(rx, ry);
-    const grd = g.createRadialGradient(0, 0, 0, 0, 0, 1);
-    grd.addColorStop(0, `rgba(${r},${gg},${b},${a})`);
-    grd.addColorStop(1, `rgba(${r},${gg},${b},0)`);
-    g.fillStyle = grd; g.beginPath(); g.arc(0, 0, 1, 0, TWO_PI); g.fill(); g.restore();
-  };
-  // Base tan + fine mottling.
-  g.fillStyle = `rgb(${seedColor[0]},${seedColor[1]},${seedColor[2]})`;
-  g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 900; i++) {
-    const d = (rnd() - 0.5) * 60;
-    blob(rnd() * w, rnd() * h, 8 + rnd() * 34, 8 + rnd() * 28, 0,
-      seedColor[0] + d, seedColor[1] + d * 0.8, seedColor[2] + d * 0.6, 0.10);
-  }
-  // Cthulhu Macula — dark reddish belt across one equatorial hemisphere.
-  for (let i = 0; i < 16; i++) {
-    blob(w * (0.02 + rnd() * 0.38), h * (0.46 + (rnd() - 0.5) * 0.24), 70 + rnd() * 95, 32 + rnd() * 46,
-      (rnd() - 0.5) * 0.5, 80 + rnd() * 28, 48 + rnd() * 16, 42 + rnd() * 14, 0.15);
-  }
-  // Tombaugh Regio — the bright nitrogen-ice "heart".
-  blob(w * 0.63, h * 0.60, 150, 122, 0.15, 240, 233, 214, 0.55);
-  blob(w * 0.71, h * 0.58, 98, 112, -0.20, 244, 238, 222, 0.50);
-  blob(w * 0.56, h * 0.57, 92, 104, 0.30, 240, 233, 214, 0.45);
-  // Scattered bright frost patches and a few dark spots.
-  for (let i = 0; i < 10; i++) blob(rnd() * w, h * (0.25 + rnd() * 0.5), 18 + rnd() * 40, 14 + rnd() * 28, 0, 232, 226, 208, 0.16);
-  for (let i = 0; i < 8; i++)  blob(rnd() * w, h * (0.30 + rnd() * 0.4), 12 + rnd() * 26, 10 + rnd() * 20, 0, 96, 70, 58, 0.15);
-  // Pale frost poles (brighter north).
-  blob(w * 0.5, 0, w * 0.7, h * 0.18, 0, 248, 244, 232, 0.5);
-  blob(w * 0.5, h, w * 0.7, h * 0.14, 0, 236, 230, 216, 0.4);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-
 // Ring mesh with radial UVs so a strip texture maps from inner -> outer edge.
-function makeRing(innerR, outerR, opts, loader) {
+function makeRing(innerR, outerR, opts, loader, maxAniso = 1) {
   const seg = 128;
   const geo = new THREE.RingGeometry(innerR, outerR, seg, 4);
   const pos = geo.attributes.position;
@@ -240,6 +193,7 @@ function makeRing(innerR, outerR, opts, loader) {
   if (opts.texture) {
     const tex = loader.load(resolveTexture(opts.texture));
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = maxAniso;
     mat = new THREE.MeshBasicMaterial({
       map: tex, side: THREE.DoubleSide, transparent: true,
       opacity: 1.0, depthWrite: false,
@@ -379,13 +333,22 @@ function makeLabel(text, cls, onClick) {
 // ---------------------------------------------------------------------------
 //  Main builder
 // ---------------------------------------------------------------------------
-export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', texRes = 'low') {
+export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', texRes = 'low', maxAniso = 1) {
   TEX_RES = texRes === 'high' ? 'high' : 'low';
   let distFn = makeDistanceFn(distMode);
   const selectable = [];          // meshes for raycasting
   const planets = [];
   const orbitLines = [];
   const labels = [];
+
+  // Shared map loader: resolution routing + full anisotropy (planet limbs and
+  // the ring plane blur badly at grazing angles with the default of 1).
+  function loadMap(path, { srgb = true } = {}) {
+    const tex = loader.load(resolveTexture(path));
+    tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    tex.anisotropy = maxAniso;
+    return tex;
+  }
 
   // ----- The real Milky Way, on its true plane -----------------------------
   // Galactic basis expressed in scene coordinates (all orthonormal).
@@ -430,8 +393,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   // accurate views are correctly to scale. In the compressed view the whole Sun
   // group (mesh + corona + glow + label) is simply scaled down to the friendly
   // SUN_RADIUS_UNITS so a single geometry serves both regimes.
-  const sunTex = loader.load(resolveTexture(SUN.texture));
-  sunTex.colorSpace = THREE.SRGBColorSpace;
+  const sunTex = loadMap(SUN.texture);
   const sunRadius = SUN.radiusEarth * CONFIG.EARTH_RADIUS_UNITS;   // true scale
   const SUN_VISUAL_SCALE = CONFIG.SUN_RADIUS_UNITS / sunRadius;    // shrink for the compressed view
   const sunMesh = new THREE.Mesh(
@@ -505,16 +467,14 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
       // Earth honors the 2K/8K texture setting like every other body. The old
       // always-8K special case made the "2K · standard" mode download ~20 MB
       // of 8K JPEGs (decoding to ~900 MB of VRAM) on every visit.
-      const dayT = loader.load(resolveTexture(data.texture)); dayT.colorSpace = THREE.SRGBColorSpace;
-      const nightT = loader.load(resolveTexture(data.nightTexture)); nightT.colorSpace = THREE.SRGBColorSpace;
-      let specT = null;
-      if (data.specularTexture) { specT = loader.load(resolveTexture(data.specularTexture)); specT.colorSpace = THREE.NoColorSpace; }
+      const dayT = loadMap(data.texture);
+      const nightT = loadMap(data.nightTexture);
+      const specT = data.specularTexture ? loadMap(data.specularTexture, { srgb: false }) : null;
       mat = makeEarthMaterial(dayT, nightT, specT);
       mesh = new THREE.Mesh(geo, mat);
     } else {
       let map;
-      if (data.texture) { map = loader.load(resolveTexture(data.texture)); map.colorSpace = THREE.SRGBColorSpace; }
-      else if (data.procedural === 'pluto') { map = proceduralPlanet([200, 178, 150]); }
+      if (data.texture) map = loadMap(data.texture);
       mat = new THREE.MeshStandardMaterial({ map, color: map ? 0xffffff : data.color, roughness: 1.0, metalness: 0.0 });
       // Surface relief from the albedo map for rocky worlds (cheap normal detail).
       if (ROCKY.has(data.id) && map) { mat.bumpMap = map; mat.bumpScale = data.id === 'mars' ? 1.6 : 1.2; }
@@ -528,7 +488,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     // is 11.6 MB, larger than the entire 2K planet set).
     let clouds = null;
     if (data.cloudsTexture) {
-      const cT = loader.load(resolveTexture(data.cloudsTexture));
+      const cT = loadMap(data.cloudsTexture, { srgb: false });   // alpha map — data, not color
       clouds = new THREE.Mesh(
         new THREE.SphereGeometry(radius * 1.015, 64, 64),
         new THREE.MeshStandardMaterial({ alphaMap: cT, transparent: true, color: 0xffffff, depthWrite: false, opacity: 0.9 })
@@ -543,7 +503,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     // Venus haze layer
     let atmoLayer = null;
     if (data.atmosphereTexture) {
-      const aT = loader.load(resolveTexture(data.atmosphereTexture)); aT.colorSpace = THREE.SRGBColorSpace;
+      const aT = loadMap(data.atmosphereTexture);
       atmoLayer = new THREE.Mesh(
         new THREE.SphereGeometry(radius * 1.02, 64, 64),
         new THREE.MeshStandardMaterial({ map: aT, transparent: true, opacity: 0.55, depthWrite: false })
@@ -555,7 +515,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     // Rings
     let ring = null;
     if (data.ring) {
-      ring = makeRing(radius * data.ring.inner, radius * data.ring.outer, data.ring, loader);
+      ring = makeRing(radius * data.ring.inner, radius * data.ring.outer, data.ring, loader, maxAniso);
       tilt.add(ring);
     }
 
@@ -584,7 +544,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
       const mPivot = new THREE.Group();
       mPivot.rotation.x = THREE.MathUtils.degToRad(md.tilt ?? 0);
       pivot.add(mPivot);
-      const mTex = loader.load(resolveTexture(md.texture)); mTex.colorSpace = THREE.SRGBColorSpace;
+      const mTex = loadMap(md.texture);
       const mMat = new THREE.MeshStandardMaterial({ map: mTex, color: md.tint ?? 0xffffff, roughness: 1, bumpMap: mTex, bumpScale: 1.2 });
       const mMesh = new THREE.Mesh(new THREE.SphereGeometry(mr, 32, 32), mMat);
       // Compressed keeps the moon close to its planet; true scale uses the real
@@ -738,19 +698,30 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const au = new Float32Array(cfg.count);
     const ang0 = new Float32Array(cfg.count);
-    const yfrac = new Float32Array(cfg.count);   // unit-less; scaled by distFn each frame
+    const omega = new Float32Array(cfg.count);   // rad/day (Kepler's 3rd law), fixed per rock
+    const scaledR = new Float32Array(cfg.count); // distFn(a) — refreshed on mode change only
+    const yfrac = new Float32Array(cfg.count);   // unit-less; scaled by R each frame
     const sx = new Float32Array(cfg.count), sy = new Float32Array(cfg.count), sz = new Float32Array(cfg.count);
     for (let i = 0; i < cfg.count; i++) {
       const a = cfg.innerAU + Math.random() * (cfg.outerAU - cfg.innerAU);
       au[i] = a;
       ang0[i] = Math.random() * TWO_PI;
+      omega[i] = TWO_PI / (365.25 * Math.pow(a, 1.5));
       yfrac[i] = (Math.random() - 0.5) * cfg.thickness * 0.05;
       const base = cfg.size[0] + Math.random() * (cfg.size[1] - cfg.size[0]);
       sx[i] = base * (0.6 + Math.random()); sy[i] = base * (0.6 + Math.random()); sz[i] = base * (0.6 + Math.random());
     }
     mesh.frustumCulled = false;
     scene.add(mesh);
-    return { mesh, au, ang0, yfrac, sx, sy, sz, cfg };
+    const belt = { mesh, au, ang0, omega, scaledR, yfrac, sx, sy, sz, cfg, lastSim: NaN };
+    refreshBeltScale(belt);
+    return belt;
+  }
+  // distFn(a) is invariant per rock between scale-mode switches; caching it
+  // removes ~9,600 Math.pow calls per frame across the two belts.
+  function refreshBeltScale(b) {
+    for (let i = 0; i < b.cfg.count; i++) b.scaledR[i] = distFn(b.au[i]);
+    b.lastSim = NaN;   // force one matrix rebuild at the new scale
   }
   const asteroidBelt = buildBelt(BELTS.asteroid, 0x9b8b78);
   const kuiperBelt = buildBelt(BELTS.kuiper, 0x6b7a8f);
@@ -758,12 +729,12 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   const dummy = new THREE.Object3D();
 
   function updateBelt(b, simDays) {
-    const { mesh, au, ang0, yfrac, sx, sy, sz, cfg } = b;
+    if (b.lastSim === simDays) return;   // paused sim → belts cost nothing
+    b.lastSim = simDays;
+    const { mesh, ang0, omega, scaledR, yfrac, sx, sy, sz, cfg } = b;
     for (let i = 0; i < cfg.count; i++) {
-      const a = au[i];
-      const period = 365.25 * Math.pow(a, 1.5);     // Kepler's 3rd law (days)
-      const ang = ang0[i] + (TWO_PI / period) * simDays;
-      const R = distFn(a);
+      const ang = ang0[i] + omega[i] * simDays;
+      const R = scaledR[i];
       // −sin matches the planets' prograde +X → −Z sweep (see astro-math.js).
       dummy.position.set(Math.cos(ang) * R, yfrac[i] * R, -Math.sin(ang) * R);
       dummy.scale.set(sx[i], sy[i], sz[i]);
@@ -781,10 +752,21 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
   // changes) so every body keeps sitting exactly on its own orbit line.
   // Re-sample every visible orbit ellipse from the bodies' CURRENT (secular-rate
   // adjusted) elements, so each planet stays exactly on its own orbit line as the
-  // elements slowly drift. Done in place each frame; hidden lines are skipped.
+  // elements slowly drift. Throttled: a full resample (513 Kepler solves per
+  // line) only runs when the body has moved ≳1/2000 of its orbit (≈0.18°,
+  // below the line's own segment resolution) or the scale mode changed — the
+  // unthrottled version cost ~7,200 solves per frame even while paused.
+  let orbitsDirty = true;
   function rebuildOrbits(simDays) {
     for (const o of orbitLines) {
-      if (!o.line.visible) continue;
+      if (!o.line.visible) {
+        // A hidden line must not swallow a pending scale change.
+        if (orbitsDirty) o.lastRebuilt = undefined;
+        continue;
+      }
+      if (!orbitsDirty && o.lastRebuilt !== undefined
+          && Math.abs(simDays - o.lastRebuilt) < o.data.periodDays / 2000) continue;
+      o.lastRebuilt = simDays;
       const op = orbitPoints(o.data, distFn, simDays);    // absolute; op[0..2] = body's position now
       // Anchor the line AT the body (vertex 0) and store vertices relative to it,
       // so the near-body section keeps full float32 precision even for the far
@@ -796,6 +778,7 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
       if (attr && attr.array.length === op.length) { attr.array.set(op); attr.needsUpdate = true; }
       else o.line.geometry.setAttribute('position', new THREE.Float32BufferAttribute(op, 3).setUsage(THREE.DynamicDrawUsage));
     }
+    orbitsDirty = false;
   }
   const drift = new THREE.Vector3();
 
@@ -854,7 +837,9 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     }, vo.group, () => vo.launched && vo.group.visible);
   }
 
-  function clearTrails() { for (const tr of trails) tr.geom.setDrawRange(0, 0); }
+  function clearTrails() {
+    for (const tr of trails) { tr.geom.setDrawRange(0, 0); tr.lastFull = undefined; }
+  }
   function setDriftMode(on, simDays) {
     driftMode = on; driftEpoch = simDays; lastSimDays = simDays;
     clearTrails();
@@ -874,7 +859,19 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     for (const tr of trails) {
       // Hide a body's wake the moment the body itself is hidden (e.g. dwarfs off).
       tr.line.visible = tr.visibleWhen ? tr.visibleWhen() : (tr.visRef ? tr.visRef.visible : true);
-      if (!tr.line.visible) { tr.geom.setDrawRange(0, 0); continue; }
+      if (!tr.line.visible) { tr.geom.setDrawRange(0, 0); tr.lastFull = undefined; continue; }
+      // A full wake recompute costs up to 1,400 Kepler solves per body; it is
+      // only due when the sim has advanced one sample interval (or reversed).
+      // Between recomputes the anchored head keeps the wake glued to the body.
+      const due = tr.lastFull === undefined || tr.lastDir !== dir
+        || Math.abs(simDays - tr.lastFull) >= tr.interval;
+      if (!due) {
+        tr.posAt(simDays, _head);
+        tr.line.position.copy(_head);
+        continue;
+      }
+      tr.lastFull = simDays;
+      tr.lastDir = dir;
       const n = tr.points;
       const pos = tr.posArr, col = tr.colArr, b = tr.base, step = dir * tr.interval;
       // Anchor the wake at the body's CURRENT position and store every vertex
@@ -1001,10 +998,11 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     distFn = makeDistanceFn(mode);
     // Resize the Sun & dwarfs and move the moons to the right orbital distance.
     setScaleMode(mode);
-    // Orbit ellipses are re-sampled every frame in update() (which main.js calls
-    // immediately after this), so they pick up the new scale automatically.
-    // Belt radius AND thickness derive from distFn live in updateBelt(), so the
-    // belts re-scale correctly on a mode change with nothing to recompute here.
+    // Orbit resampling and the belts' cached radii are throttled; a scale
+    // change is the one event that must force both to recompute.
+    orbitsDirty = true;
+    refreshBeltScale(asteroidBelt);
+    refreshBeltScale(kuiperBelt);
   }
 
   return {

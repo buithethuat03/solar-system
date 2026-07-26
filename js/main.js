@@ -121,7 +121,8 @@ const state = {
 // Overlay Vietnamese onto the dataset (if selected) BEFORE building, so labels,
 // the navigator and the info panel all pick up the translated names/text.
 applyBodyTranslations(SUN, PLANETS, MOONS, VOYAGERS, BLACK_HOLES);
-const system = buildSolarSystem(systemRoot, loader, onPick, state.distanceMode, TEX_RES);
+const system = buildSolarSystem(systemRoot, loader, onPick, state.distanceMode, TEX_RES,
+  Math.min(8, renderer.capabilities.getMaxAnisotropy()));
 
 // ---------------------------------------------------------------------------
 //  Post-processing — SELECTIVE bloom: only the Sun (and the eclipse Sun) glow.
@@ -130,22 +131,11 @@ const system = buildSolarSystem(systemRoot, loader, onPick, state.distanceMode, 
 //  bloom pass; everything else is rendered black so it contributes no glow.
 // ---------------------------------------------------------------------------
 const BLOOM_LAYER = 1;
-const bloomLayer = new THREE.Layers();
-bloomLayer.set(BLOOM_LAYER);
-const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-const savedMaterials = {};
-function darkenNonBloomed(obj) {
-  // isLine matters: orbit lines and additive trails otherwise keep their bright
-  // materials in the bloom pass and glow (the Sun trail sits above threshold).
-  if ((obj.isMesh || obj.isPoints || obj.isSprite || obj.isLine) && bloomLayer.test(obj.layers) === false) {
-    savedMaterials[obj.uuid] = obj.material;
-    obj.material = darkMaterial;
-  }
-}
-function restoreMaterial(obj) {
-  if (savedMaterials[obj.uuid]) { obj.material = savedMaterials[obj.uuid]; delete savedMaterials[obj.uuid]; }
-}
-// Tag the Sun and its corona/glow sprites so they are the only things that bloom.
+// Tag the Sun and its corona/glow sprites so they are the only things that
+// bloom. layers.enable keeps them on layer 0 too, so the base render still
+// draws them; the bloom pass renders with the camera masked to BLOOM_LAYER
+// alone — ~3 draw calls instead of the old darken-the-whole-scene re-render
+// with two full graph traversals and per-frame material swaps.
 system.sunMesh.traverse((o) => o.layers.enable(BLOOM_LAYER));
 
 const renderScene = new RenderPass(scene, camera);
@@ -156,6 +146,9 @@ const bloomComposer = new EffectComposer(renderer);
 bloomComposer.renderToScreen = false;
 bloomComposer.addPass(renderScene);
 bloomComposer.addPass(bloomPass);
+// The glow is low-frequency: half resolution quarters the blur-chain cost
+// with no visible difference.
+bloomComposer.setSize(window.innerWidth / 2, window.innerHeight / 2);
 
 const mixPass = new ShaderPass(new THREE.ShaderMaterial({
   uniforms: { baseTexture: { value: null }, bloomTexture: { value: bloomComposer.renderTarget2.texture } },
@@ -165,7 +158,15 @@ const mixPass = new ShaderPass(new THREE.ShaderMaterial({
 }), 'baseTexture');
 mixPass.needsSwap = true;
 
-const finalComposer = new EffectComposer(renderer);
+// MSAA for the composer path: the canvas' own antialiasing does not apply to
+// render-target passes, so with bloom enabled (the default) edges aliased.
+const composerSamples = renderer.capabilities.isWebGL2 ? 4 : 0;
+const drawSize = renderer.getDrawingBufferSize(new THREE.Vector2());
+const finalTarget = new THREE.WebGLRenderTarget(drawSize.x, drawSize.y, {
+  type: THREE.HalfFloatType,
+  samples: composerSamples,
+});
+const finalComposer = new EffectComposer(renderer, finalTarget);
 finalComposer.addPass(renderScene);
 finalComposer.addPass(mixPass);
 finalComposer.addPass(new OutputPass());
@@ -173,9 +174,9 @@ finalComposer.addPass(new OutputPass());
 // Render one frame: selective bloom when enabled, else a plain render.
 function renderFrame() {
   if (state.bloom) {
-    scene.traverse(darkenNonBloomed);
+    camera.layers.set(BLOOM_LAYER);   // bloom sources only
     bloomComposer.render();
-    scene.traverse(restoreMaterial);
+    camera.layers.set(0);             // everything for the base render
     finalComposer.render();
   } else {
     renderer.render(scene, camera);
@@ -802,7 +803,7 @@ window.addEventListener('resize', () => {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h; camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-  bloomComposer.setSize(w, h);
+  bloomComposer.setSize(w / 2, h / 2);
   finalComposer.setSize(w, h);
   labelRenderer.setSize(w, h);
   bloomPass.resolution.set(w, h);
