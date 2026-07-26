@@ -767,34 +767,34 @@ export const MOONS = [
       'Its gravity drives the ocean tides on Earth.'] },
 
   { id: 'io', name: 'Io', parent: 'jupiter', texture: 'textures/io.jpg',          // USGS Galileo/Voyager colour mosaic
-    radiusEarth: 0.286, dist: 2.6, aKm: 421800, periodDays: 1.77, tint: 0xffffff, color: 0xf4e07a,
+    radiusEarth: 0.286, dist: 2.6, aKm: 421800, periodDays: 1.77, M0: 17.92, tint: 0xffffff, color: 0xf4e07a,
     info: { 'Diameter': '3,643 km', 'Orbital period': '1.77 days', 'Notable': 'Most volcanic body known' },
     description: 'Io is the most volcanically active world in the Solar System.',
     facts: ['Io has over 400 active volcanoes.', 'It is one of Jupiter\'s four Galilean moons.'] },
   { id: 'europa', name: 'Europa', parent: 'jupiter', texture: 'textures/europa.jpg',   // USGS Voyager/Galileo mosaic (greyscale, tinted icy)
-    radiusEarth: 0.245, dist: 3.4, aKm: 671100, periodDays: 3.55, tint: 0xe7ddcb, color: 0xcdb999,
+    radiusEarth: 0.245, dist: 3.4, aKm: 671100, periodDays: 3.55, M0: 212.39, tint: 0xe7ddcb, color: 0xcdb999,
     info: { 'Diameter': '3,122 km', 'Orbital period': '3.55 days', 'Notable': 'Subsurface ocean' },
     description: 'Europa hides a salty liquid-water ocean beneath its icy crust — a prime target in the search for life.',
     facts: ['Europa may hold twice as much water as all of Earth\'s oceans.', 'Its surface is among the smoothest in the Solar System.'] },
   { id: 'ganymede', name: 'Ganymede', parent: 'jupiter', texture: 'textures/ganymede.jpg',  // USGS Kersten 2021 colour mosaic
-    radiusEarth: 0.413, dist: 4.4, aKm: 1070400, periodDays: 7.15, tint: 0xffffff, color: 0x9c8e7a,
+    radiusEarth: 0.413, dist: 4.4, aKm: 1070400, periodDays: 7.15, M0: 219.84, tint: 0xffffff, color: 0x9c8e7a,
     info: { 'Diameter': '5,268 km', 'Orbital period': '7.15 days', 'Notable': 'Largest moon in the Solar System' },
     description: 'Ganymede is the largest moon in the Solar System — bigger than the planet Mercury.',
     facts: ['It is the only moon known to have its own magnetic field.', 'Ganymede is larger than Mercury.'] },
   { id: 'callisto', name: 'Callisto', parent: 'jupiter', texture: 'textures/callisto.jpg',  // USGS Voyager/Galileo mosaic (greyscale, tinted)
-    radiusEarth: 0.378, dist: 5.6, aKm: 1882700, periodDays: 16.69, tint: 0x9a8f7f, color: 0x7a7268,
+    radiusEarth: 0.378, dist: 5.6, aKm: 1882700, periodDays: 16.69, M0: 80.05, tint: 0x9a8f7f, color: 0x7a7268,
     info: { 'Diameter': '4,821 km', 'Orbital period': '16.69 days', 'Notable': 'Most heavily cratered body' },
     description: 'Callisto is the outermost Galilean moon and one of the most cratered objects known.',
     facts: ['Callisto\'s surface is among the oldest in the Solar System.', 'It may harbour a subsurface ocean.'] },
 
   { id: 'titan', name: 'Titan', parent: 'saturn', texture: 'textures/titan.jpg',   // USGS Cassini ISS global mosaic (greyscale, tinted haze)
-    radiusEarth: 0.404, dist: 4.6, aKm: 1221870, periodDays: 15.95, tint: 0xd9a441, color: 0xd9a441,
+    radiusEarth: 0.404, dist: 4.6, aKm: 1221870, periodDays: 15.95, M0: 140.99, tint: 0xd9a441, color: 0xd9a441,
     info: { 'Diameter': '5,150 km', 'Orbital period': '15.95 days', 'Notable': 'Thick atmosphere & methane lakes' },
     description: 'Titan is Saturn\'s largest moon — the only moon with a dense atmosphere and stable surface liquids.',
     facts: ['Titan has rivers, lakes and seas of liquid methane and ethane.', 'Its atmosphere is denser than Earth\'s.'] },
 
   { id: 'triton', name: 'Triton', parent: 'neptune', texture: 'textures/triton.jpg',   // USGS Voyager 2 colour mosaic (partial coverage)
-    radiusEarth: 0.212, dist: 4.2, aKm: 354800, periodDays: -5.88, tint: 0xffffff, color: 0xc9c2d6,
+    radiusEarth: 0.212, dist: 4.2, aKm: 354800, periodDays: -5.88, M0: 148.91, tint: 0xffffff, color: 0xc9c2d6,
     info: { 'Diameter': '2,707 km', 'Orbital period': '5.88 days (retrograde)', 'Notable': 'Geologically active, retrograde orbit' },
     description: 'Triton orbits Neptune backwards and is likely a captured Kuiper Belt object.',
     facts: ['Triton is one of the coldest objects in the Solar System (~ -235 °C).', 'It has active nitrogen geysers.'] },

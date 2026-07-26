@@ -4,7 +4,7 @@
 //  Coordinates are returned in the three.js frame (Y = up), with the ecliptic
 //  lying close to the X-Z plane.
 // ============================================================================
-import { CONFIG, RATES } from './data.js';
+import { CONFIG, RATES, PLANETS } from './data.js';
 import { VOYAGER_EPHEM } from './voyager_ephem.js';
 
 const DEG = Math.PI / 180;
@@ -93,6 +93,22 @@ export function heliocentric(el, days) {
 
   // Map ecliptic -> three.js (Y up): scene = (X, Z, -Y)
   return { x: X, y: Z, z: -Y, r, nu };
+}
+
+// --- Geocentric Sun ---------------------------------------------------------
+// The Sun's apparent ecliptic position is the flipped heliocentric Earth from
+// the SAME element/rate model that places the drawn planets, so the orrery and
+// the eclipse/Moon mathematics can never disagree about the Sun–Earth line.
+// Constant annual aberration (Meeus 25.10) is applied to the longitude.
+const EARTH_EL = PLANETS.find(p => p.id === 'earth');
+export function geocentricSunEcliptic(days) {
+  const p = heliocentric(EARTH_EL, days);
+  // scene (x, y, z) = ecliptic (X, Z, −Y) → recover ecliptic components
+  const X = p.x, Y = -p.z, Z = p.y;
+  let lonDeg = Math.atan2(-Y, -X) / DEG;
+  const latDeg = Math.asin(Math.max(-1, Math.min(1, -Z / p.r))) / DEG;
+  lonDeg -= (20.4898 / 3600) / p.r;
+  return { lonDeg: ((lonDeg % 360) + 360) % 360, latDeg, distAU: p.r };
 }
 
 // --- Scaled scene position (units) -----------------------------------------

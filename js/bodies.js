@@ -7,6 +7,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SUN, PLANETS, MOONS, BELTS, CONFIG, VOYAGERS } from './data.js';
 import { scenePosition, orbitPoints, makeDistanceFn, voyagerScenePosition } from './kepler.js';
 import { equatorialToSceneVec, moonOrbitPosition } from './astro-math.js';
+import { moonEclipticPosition } from './moon.js';
+import { simDaysToJdTT } from './timescales.js';
 
 const TWO_PI = Math.PI * 2;
 const Y_UP = new THREE.Vector3(0, 1, 0);
@@ -542,7 +544,10 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     for (const md of MOONS.filter(m => m.parent === data.id)) {
       const mr = Math.max(0.22, md.radiusEarth * CONFIG.EARTH_RADIUS_UNITS);
       const mPivot = new THREE.Group();
-      mPivot.rotation.x = THREE.MathUtils.degToRad(md.tilt ?? 0);
+      // Earth's Moon is positioned by a real ephemeris carrying the full 3D
+      // direction (longitude AND latitude), so its pivot stays unrotated; the
+      // simplified circular moons tip their plane by the data inclination.
+      mPivot.rotation.x = md.id === 'moon' ? 0 : THREE.MathUtils.degToRad(md.tilt ?? 0);
       pivot.add(mPivot);
       const mTex = loadMap(md.texture);
       const mMat = new THREE.MeshStandardMaterial({ map: mTex, color: md.tint ?? 0xffffff, roughness: 1, bumpMap: mTex, bumpScale: 1.2 });
@@ -589,6 +594,8 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         m.dist = visual ? m.distVisual : m.distTrue;
         m.mesh.position.set(m.dist, 0, 0);
         m.orbit.geometry.setAttribute('position', new THREE.Float32BufferAttribute(moonCirclePts(m.dist), 3));
+        // The ephemeris Moon resamples its own (non-circular) orbit line.
+        if (m.data.id === 'moon') m.orbitEpoch = undefined;
         m.orbit.geometry.attributes.position.needsUpdate = true;
         m.orbit.geometry.computeBoundingSphere();
       }
@@ -894,6 +901,43 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
     }
   }
 
+  // ----- Earth's Moon: real ephemeris ---------------------------------------
+  const KM_TO_UNITS = CONFIG.EARTH_RADIUS_UNITS / CONFIG.KM_PER_EARTH_RADIUS;
+  function moonSceneOffset(simDays, compressedDist, out) {
+    const e = moonEclipticPosition(simDaysToJdTT(simDays));
+    const lat = e.latDeg * DEG2RAD;
+    const lon = e.lonDeg * DEG2RAD;
+    const cosLat = Math.cos(lat);
+    // In the compressed view the DIRECTION is real but the distance stays
+    // didactic; the true-scale views use the real eccentric distance.
+    const dist = compressedDist ?? e.distKm * KM_TO_UNITS;
+    out.set(
+      cosLat * Math.cos(lon) * dist,
+      Math.sin(lat) * dist,
+      -cosLat * Math.sin(lon) * dist,
+    );
+    return out;
+  }
+  function updateEarthMoon(m, simDays) {
+    const compressed = m.dist === m.distVisual ? m.dist : null;
+    moonSceneOffset(simDays, compressed, m.mesh.position);
+    // Tidal lock: same convention as the circular moons (near side inward).
+    m.mesh.rotation.y = -Math.atan2(m.mesh.position.z, m.mesh.position.x);
+    // Resample the drawn orbit (one anomalistic month around now) sparsely.
+    if (m.orbitEpoch === undefined || Math.abs(simDays - m.orbitEpoch) > 0.25) {
+      m.orbitEpoch = simDays;
+      const attr = m.orbit.geometry.getAttribute('position');
+      const count = attr.count;
+      for (let s = 0; s < count; s++) {
+        const t = simDays - 13.66 + (27.32 * s) / (count - 1);
+        moonSceneOffset(t, compressed, _moonPt);
+        attr.setXYZ(s, _moonPt.x, _moonPt.y, _moonPt.z);
+      }
+      attr.needsUpdate = true;
+    }
+  }
+  const _moonPt = new THREE.Vector3();
+
   // ----- Public update -----------------------------------------------------
   const sunDirTmp = new THREE.Vector3();
   const _sv = new THREE.Vector3(), _iq = new THREE.Quaternion();
@@ -935,13 +979,19 @@ export function buildSolarSystem(scene, loader, onSelect, distMode = 'visual', t
         if (p.atmoLayer) p.atmoLayer.rotation.y = rot * 0.9;
       }
 
-      // moons (near-circular orbits; sign of period = orbit direction).
+      // Moons. Earth's Moon runs on the truncated ELP2000 ephemeris (real
+      // phase, latitude, and — at true scale — the real eccentric distance);
+      // the others are circular with a HORIZONS-derived J2000 epoch phase.
       // moonOrbitPosition carries the prograde +X → −Z scene convention; the
       // former +sin variant made every moon (and Triton doubly so) revolve
       // backwards relative to its planet.
       for (const m of p.moons) {
         const md = m.data;
-        const ang = (TWO_PI / md.periodDays) * simDays;
+        if (md.id === 'moon') {
+          updateEarthMoon(m, simDays);
+          continue;
+        }
+        const ang = (md.M0 ?? 0) * DEG2RAD + (TWO_PI / md.periodDays) * simDays;
         moonOrbitPosition(ang, m.dist, m.mesh.position);
         m.mesh.rotation.y = ang;   // keep one face toward the planet (tidal lock)
       }
